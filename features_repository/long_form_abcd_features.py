@@ -106,18 +106,18 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           group_by=VideoSegment.NONE,
       ),
       VideoFeature(
-          id="a_quick_pacing_1st_secs",
+          id="a_quick_pacing_1st_5_secs",
           name="Quick Pacing (First 5 seconds)",
           category=VideoFeatureCategory.LONG_FORM_ABCD,
           sub_category=VideoFeatureSubCategory.ATTRACT,
           video_segment=VideoSegment.FULL_VIDEO,  # Use full video for annotations
           evaluation_criteria="""
-                There are at least 5 shot changes or visual cuts detected in the video. These include hard cuts,
+                There are at least 5 shot changes or visual cuts detected in the first 5 seconds of the video. These include hard cuts,
                 soft transitions and camera changes such as camera pans, swipes, zooms, depth of field changes,
                 tracking shots and movement of the camera.
             """,
           prompt_template="""
-                Are there at least 5 shot changes or visual cuts detected in the video?
+                Are there at least 5 shot changes or visual cuts detected in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -227,10 +227,10 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                The brand name is heard in the audio or speech in the video.
+                The brand name is heard in the audio or speech in the first 5 seconds of the video.
             """,
           prompt_template="""
-                Does the speech mention the brand {brand_name} in the video?
+                Does the speech mention the brand {brand_name} in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -283,10 +283,10 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                Branding, defined as the brand name or brand logo are shown in-situation or overlaid in the video.
+                Branding, defined as the brand name or brand logo are shown in-situation or overlaid in the first 5 seconds of the video.
             """,
           prompt_template="""
-                Is the brand {brand_name} or brand logo {brand_name} visible in the video?
+                Is the brand {brand_name} or brand logo {brand_name} visible in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -343,12 +343,12 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                The branded product names or generic product categories are heard or mentioned in the audi or speech
-                in the the video.
+                The branded product names or generic product categories are heard or mentioned in the audio or speech
+                in the first 5 seconds of the video.
             """,
           prompt_template="""
                Are any of the following products: {branded_products} or product categories: {branded_products_categories}
-               heard in the speech of the video?
+               heard in the speech in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -399,11 +399,11 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                The branded product names or generic product categories are present in any text or overlay in the video.
+                The branded product names or generic product categories are present in any text or overlay in the first 5 seconds of the video.
             """,
           prompt_template="""
                Is any of the following products: {branded_products} or product categories: {branded_products_categories}
-               present in any text or overlay in the video?
+               present in any text or overlay in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -454,12 +454,12 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                A product or branded packaging is visually present at any time in the video. Where the product is a service
+                A product or branded packaging is visually present in the first 5 seconds of the video. Where the product is a service,
                 a relevant substitute should be shown such as via a branded app or branded service personnel.
             """,
           prompt_template="""
                Is any of the following products: {branded_products} or product categories: {branded_products_categories}
-               visually present in the video?
+               visually present in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -539,11 +539,11 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                People are shown in any capacity in the video. Any human body parts are acceptable to pass this guideline.
+                People are shown in any capacity in the first 5 seconds of the video. Any human body parts are acceptable to pass this guideline.
                 Alternate representations of people such as Animations or Cartoons ARE acceptable.
             """,
           prompt_template="""
-               Are there people present at any time in the video?
+               Are there people present in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -568,11 +568,11 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                At least one human face is present in the video. Alternate representations of people such as
+                At least one human face is present in the first 5 seconds of the video. Alternate representations of people such as
                 Animations or Cartoons ARE acceptable.
             """,
           prompt_template="""
-               Is there a human face present in the video?
+               Is there a human face present in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -622,10 +622,10 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.DIRECT,
           video_segment=VideoSegment.FIRST_5_SECS_VIDEO,
           evaluation_criteria="""
-                Speech is detected in the audio of the video.
+                Speech is detected in the audio in the first 5 seconds of the video.
             """,
           prompt_template="""
-               Is speech detected in the audio of the video?
+               Is speech detected in the audio in the first 5 seconds of the video?
             """,
           extra_instructions=[
               "Consider the following criteria for your answer: {criteria}",
@@ -635,31 +635,6 @@ def get_long_form_abcd_feature_configs() -> list[VideoFeature]:
           evaluation_function="",
           include_in_evaluation=True,
           group_by=VideoSegment.FIRST_5_SECS_VIDEO,
-      ),
-      VideoFeature(
-          id="d_call_to_action_speech",
-          name="Call To Action (Speech)",
-          category=VideoFeatureCategory.LONG_FORM_ABCD,
-          sub_category=VideoFeatureSubCategory.DIRECT,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                A 'Call To Action' phrase is heard or mentioned in the audio or speech at any time in the video.
-            """,
-          prompt_template="""
-               Is any call to action heard or mentioned in the speech of the video?
-            """,
-          extra_instructions=[
-              "Consider the following criteria for your answer: {criteria}",
-              "Some examples of call to actions are: {call_to_actions}",
-              (
-                  "Provide the exact timestamp when the call to actions are"
-                  " heard or mentioned in the speech of the video."
-              ),
-          ],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
       ),
       VideoFeature(
           id="d_call_to_action_speech",
