@@ -31,738 +31,966 @@ from models import (
 
 
 def get_shorts_feature_configs() -> list[VideoFeature]:
-  """Gets all the supported ABCD/Shorts features
+  """Gets all the supported ABCD/Shorts features.
+
+  Returns original shorts features PLUS new organized ABCD features
+  (Attract, Brand, Connect, Direct, Other)
+
   Returns:
+      feature_configs: list of feature configurations
+
   feature_configs: list of feature configurations
   """
+  # Get original shorts features
   feature_configs = [
       VideoFeature(
-          id="shorts_production_style",
-          name="Shorts Production Style",
+          id="tight_framing_index",
+          name="Tight Framing & Visual Dominance",
           category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
+          sub_category=VideoFeatureSubCategory.ATTRACT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Analyze whether the video uses full studio production or user-generated studio style.
-                    Full studio production involves professional equipment, controlled environments, and skilled crews.
-                    User-generated studio style mimics authenticity while maintaining some production value,
-                    featuring more relaxed and personal presentation despite being filmed in controlled settings.
-                """,
+                Quantifies the spatial dominance of the primary subject.
+                Tight framing is defined by a Subject-to-Frame Ratio (SfR) of ≥60%.
+                The score reflects the 'Density' (persistence) of tight framing, 
+                differentiating between incidental close-ups and thematic visual dominance.
+            """,
           prompt_template="""
-                    Analyze the production style of this short-form video.
+                Act as a professional Cinematographer and Video Analyst. Your goal is to measure
+                'Visual Weight' through Tight Framing detection.
+            
+                VIDEO METADATA: {metadata_summary}
 
-                    VIDEO METADATA:
-                    {metadata_summary}
+                ### 1. QUANTITATIVE HEURISTICS:
+                - **Extreme Close-Up (ECU):** Subject fills >80% of frame.
+                - **Close-Up (CU):** Subject fills 60% - 80% of frame.
+                - **Medium Shot (MS):** Subject fills 30% - 59% of frame.
+                - **Wide/Long Shot (LS):** Subject fills <30% of frame.
 
-                    ANALYZE FOR TWO DISTINCT STYLES:
-                    1. STUDIO PRODUCTION CHARACTERISTICS:
-                        a) Technical Quality:
-                            - Professional lighting setup
-                            - Multiple camera angles
-                            - Perfect focus and exposure
-                            - High-end equipment use
-                            - Professional audio setup
-                        b) Environment Control:
-                            - Studio/controlled setting
-                            - Professional backdrops
-                            - Perfect set arrangement
-                            - Controlled lighting
-                            - Staged elements
-                        c) Performance Elements:
-                            - Skilled actors/talent
-                            - Polished delivery
-                            - Perfect timing
-                            - Professional pacing
-                            - Scripted presentation
-                    2. USER-GENERATED STUDIO CHARACTERISTICS:
-                        a) Technical Aspects:
-                            - Good but not perfect lighting
-                            - Simple camera setups
-                            - Basic but clean audio
-                            - Mixed equipment quality
-                            - Casual but controlled shots
-                        b) Environment Elements:
-                            - Semi-controlled settings
-                            - Personal spaces
-                            - Natural arrangements
-                            - Mixed lighting styles
-                            - Authentic props
-                        c) Performance Style:
-                            - Natural delivery
-                            - Casual pacing
-                            - Personal tone
-                            - Relaxed timing
-                            - Semi-scripted feel
+                ### 2. DENSITY & QUALITY LOGIC:
+                - **Density Score:** (Total duration of all CU and ECU shots) / (Total video duration).
+                Represented as density_score in the JSON.
+                - **Feature Quality Score:** Map the density_score to the following scale:
+                    * 0.9-1.0: Density > 70% (Dominant)
+                    * 0.7-0.8: Density 40-70% (Strong)
+                    * 0.4-0.6: Density 20-40% (Balanced)
+                    * 0.1-0.3: Density < 20% (Incidental)
 
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # TRUE for studio, FALSE for user-gen
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_quality": {{
-                                "observed_style": str,  # "Studio" or "User-Generated Studio"
-                                "production_elements": [
-                                    {{
-                                        "element": str,  # What was observed
-                                        "type": str,     # "Studio" or "User-Gen"
-                                        "timestamp": float,
-                                        "confidence": float
-                                    }}
-                                ],
-                                "overall_quality": str  # Description of technical quality
-                            }},
-                            "environment_analysis": {{
-                                "setting_type": str,
-                                "control_level": str,
-                                "key_elements": [str],
-                                "authenticity_markers": [str]
-                            }},
-                            "performance_assessment": {{
-                                "delivery_style": str,
-                                "scripting_level": str,
-                                "authenticity_score": float,
-                                "key_moments": [
-                                    {{
-                                        "timestamp": float,
-                                        "description": str,
-                                        "style_indicator": str
-                                    }}
-                                ]
-                            }},
-                            "production_markers": {{
-                                "studio_elements": [
-                                    {{
-                                        "type": str,
-                                        "description": str,
-                                        "timestamp": float
-                                    }}
-                                ],
-                                "user_gen_elements": [
-                                    {{
-                                        "type": str,
-                                        "description": str,
-                                        "timestamp": float
-                                    }}
-                                ]
-                            }},
-                            "overall_assessment": {{
-                                "primary_style": str,
-                                "distinguishing_features": [str],
-                                "production_level": str,
-                                "authenticity_level": str
-                            }}
+                ### FORMAT RESPONSE AS JSON:
+                {{
+                    "detected": boolean,
+                    "confidence_score": float, # Certainty of visual detection accuracy
+                    "feature_quality_score": float, # The 0.0-1.0 score based on the Density Scale
+                    "metrics": {{
+                        "density_score": float, # MANDATORY: Total tight-frame duration / Total duration
+                        "peak_sfr_percentage": float, # Highest Subject-to-Frame ratio observed
+                        "primary_subject_class": str, # "Product", "Human_Face", "Text", "Abstract"
+                        "framing_cadence": "Static" | "Fast-Cutting" | "Zoom-In-Progressive"
+                    }},
+                    "spatial_analysis": {{
+                        "average_negative_space_ratio": float, # 1.0 - average SfR
+                        "edge_collision": boolean, # Subject bleeds off the edges
+                        "occlusion_level": "None" | "Partial" | "Heavy"
+                    }},
+                    "temporal_segments": [
+                        {{
+                            "start": float,
+                            "end": float,
+                            "shot_type": "ECU" | "CU",
+                            "subject_dominance_score": float,
+                            "description": str
                         }}
+                    ],
+                    "overall_assessment": {{
+                        "visual_impact_score": float, # Effectiveness for mobile viewing
+                        "is_hook_tightly_framed": boolean, # Evaluates the first 3 seconds
+                        "summary": "Concise technical summary of framing strategy"
                     }}
+                }}
 
-                    EVALUATION NOTES:
-                    1. Technical Quality:
-                        - Assess equipment usage
-                        - Note production values
-                        - Consider consistency
-                        - Evaluate polish level
-                    2. Environment Control:
-                        - Check setting control
-                        - Analyze backgrounds
-                        - Assess staging
-                        - Note authenticity
-                    3. Performance Elements:
-                        - Evaluate delivery
-                        - Check naturality
-                        - Assess timing
-                        - Note authenticity
-
-                    CONFIDENCE CONSIDERATIONS:
-                        - Strong Studio (0.8-1.0): Clear professional production
-                        - Moderate Studio (0.6-0.7): Mixed but primarily professional
-                        - Strong User-Gen (0.2-0.3): Clear authentic style
-                        - Moderate User-Gen (0.4-0.5): Mixed but primarily authentic
-
-                    IMPORTANT NOTES:
-                        1. High production quality can exist in both styles
-                        2. Focus on intentional authenticity vs polished presentation
-                        3. Consider overall feel and consistency
-                        4. Look for intentional "casualness" in user-gen studio
-                        5. Note mixed elements that may appear in either style
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,  # confirm
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_tv_ad_style",
-          name="Shorts TV Ad Style",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Analyze if the short-form video matches traditional TV advertisement style.
-                    Consider production quality, editing patterns, and overall composition.
-                    TV ad style typically shows professional studio lighting, clean editing,
-                    perfect framing, and polished transitions, while natural short-form content
-                    often features dynamic editing, casual framing, and trend-based styles.
-                """,
-          prompt_template="""
-                    Analyze if this short-form video matches traditional TV advertisement style.
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    STYLE INDICATORS TO CONSIDER:
-                    1. TV AD CHARACTERISTICS:
-                        a) Production Quality:
-                            - Professional studio lighting
-                            - Perfect exposure control
-                            - Stable camera movements
-                            - Clean, controlled framing
-                            - High production polish
-
-                        b) Editing Style:
-                            - Traditional commercial pacing
-                            - Professional transitions
-                            - Perfectly timed cuts
-                            - Montage-style sequences
-                            - Beauty shots
-
-                        c) Composition:
-                            - Formal framing
-                            - Perfect subject placement
-                            - Professional depth of field
-                            - Controlled backgrounds
-                            - Strategic visual design
-
-                    2. NATURAL SHORT-FORM STYLE:
-                        a) Production Approach:
-                            - Natural or mixed lighting
-                            - Dynamic camera work
-                            - Authentic environments
-                            - Casual framing
-                            - Real-world settings
-
-                        b) Editing Patterns:
-                            - Quick, energetic cuts
-                            - Trend-based transitions
-                            - Dynamic pacing
-                            - Informal sequences
-                            - Personal style
-                        c) Composition Elements:
-                            - Flexible framing
-                            - Natural placement
-                            - Authentic backgrounds
-                            - Personal spaces
-                            - Spontaneous layout
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # TRUE if matches TV ad style
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "style_analysis": {{
-                                "production_quality": {{
-                                    "observed_level": str,
-                                    "tv_ad_elements": [str],
-                                    "natural_elements": [str],
-                                    "confidence": float
-                                }},
-                                "editing_patterns": {{
-                                    "style_type": str,
-                                    "tv_ad_markers": [str],
-                                    "natural_markers": [str],
-                                    "confidence": float
-                                }},
-                                "composition_elements": {{
-                                    "overall_style": str,
-                                    "formal_aspects": [str],
-                                    "casual_aspects": [str],
-                                    "confidence": float
-                                }}
-                            }},
-                            "timestamps": [
-                                {{
-                                    "time": float,
-                                    "element_type": str,
-                                    "style_indicator": str,
-                                    "description": str
-                                }}
-                            ],
-                            "key_evidence": {{
-                                "tv_ad_style": [
-                                    {{
-                                        "aspect": str,
-                                        "evidence": str,
-                                        "impact": str
-                                    }}
-                                ],
-                                "natural_style": [
-                                    {{
-                                        "aspect": str,
-                                        "evidence": str,
-                                        "impact": str
-                                    }}
-                                ]
-                            }},
-                            "overall_assessment": {{
-                                "primary_style": str,
-                                "style_confidence": float,
-                                "distinguishing_features": [str]
-                            }}
-                        }}
-                    }}
-
-                    EVALUATION NOTES:
-                    1. Production Quality:
-                        - High production ≠ automatically TV style
-                        - Consider intentional vs polished
-                        - Note lighting and camera work
-                        - Assess environment control
-                    2. Editing Patterns:
-                        - Look for pacing patterns
-                        - Note transition styles
-                        - Consider timing choices
-                        - Evaluate flow and rhythm
-                    3. Composition Choices:
-                        - Analyze framing decisions
-                        - Consider subject placement
-                        - Evaluate background control
-                        - Note visual hierarchy
-
-                    RESPONSE REQUIREMENTS:
-                        1. Clear style categorization
-                        2. Specific evidence points
-                        3. Detailed timestamps
-                        4. Confidence assessment
-                        5. Overall style evaluation
+                ### EVALUATION LOGIC:
+                - **The Hook:** If the first 3 seconds are tight-framed, increase the visual_impact_score.
+                - **Negative Space:** Ignore solid color backgrounds (graphics); focus on the subject's physical bounding box.
+                - **Calculation:** Ensure the density_score is a precise float based on the temporal_segments sum.
             """,
           extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,  # confirm
+          evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
           include_in_evaluation=True,
           group_by=VideoSegment.FULL_VIDEO,
       ),
       VideoFeature(
-          id="shorts_sfv_adaptation_low",
-          name="Native Content Style_LOW",
+          id="shorts_human_voice",
+          name="Human Voice Presence",
           category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
+          sub_category=VideoFeatureSubCategory.ATTRACT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Evaluate if the video emulates native, organic shortform video content vs appearing commercial/polished.
-                    Videos should feel like authentic social media content with:
-                        1. Raw/authentic visual style (natural lighting, minimal editing)
-                        2. Casual/conversational audio (natural acoustics, informal speech)
-                        3. Personal presentation (direct address, unscripted feel)
-                        4. Organic pacing (natural flow, spontaneous moments)
-
-                    Commercial characteristics that reduce native feel include:
-                        - Professional production quality
-                        - Studio lighting/sound
-                        - Heavy editing
-                        - Formal presentation
-                        - TV commercial-style execution
-                """,
+            Quantifies the presence, duration, and quality of human speech. 
+            Voice includes Voice-Overs (VO), direct-to-camera dialogue, or background 
+            narration. The metric measures 'Vocal Density' (percentage of video containing 
+            speech) and assesses the clarity and role of the speaker.
+        """,
           prompt_template="""
-            Using both the provided metadata AND your understanding of social media content styles, evaluate how well this video emulates native shortform content.
+            Act as a professional Cinematographer and Video Analyst. Your goal is to analyze the audio track of this video specifically for human vocal presence.
 
-            BRAND/PRODUCT CONTEXT:
-            - Brand: {brand}
-            - Product: {product}
-            - Industry: {vertical}
+            VIDEO METADATA: {metadata_summary}
+
+            ### 1. METRIC DEFINITIONS:
+            - **Density Score:** (Total duration of audible human speech) / (Total video duration). It is referred to as density_score in the JSON file.
+            *Example: If there is a 2s intro greeting and a 3s closing call-to-action in a 10s video, Density Score is 0.5.*
+            - **Vocal Clarity:** The ease with which the voice is understood (0.0 - 1.0). High score = studio quality/clear; Low score = muffled, heavy background noise, or distorted.
+
+            ### 2. VOCAL CATEGORIES:
+            - **Voice Over (VO):** Narrative voice added in post-production.
+            - **Dialogue:** On-camera person speaking.
+            - **Ambient Speech:** Overheard background talking.
+            - **Synthetic/AI Voice:** Clear AI-generated narration (text-to-speech).
+
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean, 
+                "confidence_score": float, # Certainty that the detected audio is a human voice
+                "metrics": {{
+                    "density_score": float, # Total speech duration / Total video duration
+                    "vocal_clarity_score": float, # 0.0 to 1.0 based on signal-to-noise ratio
+                    "primary_voice_type": "Voice_Over" | "Dialogue" | "AI_Synthetic" | "Mixed",
+                    "speech_cadence": "Constant" | "Intermittent" | "Rapid" | "Slow"
+                }},
+                "audio_analysis": {{
+                    "background_noise_level": "Low" | "Medium" | "High",
+                    "music_overlap_interference": boolean, # Does background music drown out the voice?
+                    "speaker_gender_estimate": "Male" | "Female" | "Multiple" | "N/A"
+                }},
+                "temporal_segments": [
+                    {{
+                        "start": float,
+                        "end": float,
+                        "voice_role": "Narration" | "Hook" | "CTA" | "Ambient",
+                        "clarity_rating": float,
+                        "description": str # e.g., "Creator introduces product features"
+                    }}
+                ],
+                "overall_assessment": {{
+                    "vocal_impact_score": float, # How much does the voice drive the narrative?
+                    "is_hook_voiced": boolean, # Does speech start within the first 1.5 seconds?
+                    "summary": "Technical summary of audio/vocal strategy"
+                }}
+            }}
+
+            ### EVALUATION STEPS:
+            1. Identify all time stamps where a human (or AI) voice is audible.
+            2. Calculate the **density_score** (Total Speech Time / Total Duration).
+            3. Evaluate the **vocal_clarity_score**—reduce this if background music or noise makes speech hard to follow.
+            4. Determine if the "Hook" (0:00-0:02) contains speech, as this is a high-retention signal.
+        """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_direct_to_camera",
+          name="Direct to Camera",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.ATTRACT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+                Quantifies the duration and intensity of direct eye contact between the 
+                on-screen subject and the camera lens. This feature measures the 
+                'Direct Address Density' and assesses the intimacy of the framing 
+                (e.g., face-to-face address).
+            """,
+          prompt_template="""
+                Act as a professional Cinematographer and Video Analyst. Your goal is to 
+                analyze the video for instances where a person looks directly into the camera lens 
+                to address the viewer.
+
+                VIDEO METADATA: {metadata_summary}
+
+                ### 1. METRIC DEFINITIONS:
+                - **Density Score:** (Total duration of direct eye contact / address) / (Total video duration). 
+                Represented as feature_quality_score in the JSON.
+                - **Eye Contact Intensity:** A measure of how consistently the subject maintains 
+                gaze without looking away at scripts or monitors (0.0 - 1.0).
+
+                ### 2. ADDRESS MODES:
+                - **Direct Address:** Subject is looking into the lens and speaking.
+                - **Silent Gaze:** Subject maintains eye contact without speaking (e.g., reacting to a sound).
+                - **Glance:** Brief, intermittent eye contact (less than 0.5s).
+                - **Off-Camera:** Subject is looking at a secondary point (3/4 profile), not the viewer.
+
+                ### FORMAT RESPONSE AS JSON:
+                {{
+                    "detected": boolean, 
+                    "confidence_score": float, # Certainty that gaze is directed at the lens
+                    "feature_quality_score": float, # Total direct address duration / Total duration
+                    "metrics": {{
+                        "eye_contact_intensity": float, # 0.0 to 1.0 (steadiness of gaze)
+                        "subject_distance": "Close-Up" | "Medium" | "Full-Body",
+                        "address_style": "Personal/Intimate" | "Presentational" | "Accidental"
+                    }},
+                    "visual_engagement_analysis": {{
+                        "facial_visibility": "Full" | "Partial" | "Occluded",
+                        "eye_level_alignment": "Eye-Level" | "High-Angle" | "Low-Angle",
+                        "emotional_delivery": str # e.g., "High-energy", "Authentic", "Stoic"
+                    }},
+                    "temporal_segments": [
+                        {{
+                            "start": float,
+                            "end": float,
+                            "gaze_type": "Direct_Address" | "Silent_Gaze" | "Intermittent",
+                            "eye_contact_strength": float,
+                            "description": str # e.g., "Speaker addresses viewer during the hook"
+                        }}
+                    ],
+                    "overall_assessment": {{
+                        "parasocial_score": float, # How effectively does the subject "connect" with the viewer?
+                        "is_hook_direct": boolean, # Does direct eye contact occur in the first 1.5 seconds?
+                        "summary": "Technical summary of direct address strategy"
+                    }}
+                }}
+
+                ### EVALUATION STEPS:
+                1. Identify all segments where the subject's pupils are directed at the camera lens.
+                2. Calculate the **feature_quality_score** by dividing direct address time by total duration.
+                3. Assess **eye_contact_intensity**—lower this if the subject is clearly reading a teleprompter or looking at themselves on the phone screen rather than the lens.
+                4. Check the "Hook" (0:00-0:02); direct address at the start is a major retention driver.
+            """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_has_supers",
+          name="Supers & Text-Audio Synchronicity",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.ATTRACT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+        Quantifies the presence, accuracy, and synchronization of text overlays (supers) 
+        with the spoken audio. This measures 'Text Density' and the 'Synchronicity Score' 
+        to determine how effectively the visual text reinforces the spoken message.
+    """,
+          prompt_template="""
+        Act as a professional Cinematographer and Video Analyst. Your goal is to 
+        Analyze the video for SUPERS (text overlays) and their relationship to the audio.
+        
+        VIDEO METADATA: {metadata_summary}
+
+        ### 1. METRIC DEFINITIONS:
+        - **Density Score:** (Total duration where text overlays are visible) / (Total video duration).
+          Represented as feature_quality_score in the JSON.
+        - **Synchronicity Score:** (0.0 - 1.0) measure of how well text timing matches spoken words. 
+          1.0 = frame-perfect captions; 0.5 = static text roughly related; 0.0 = no relation.
+
+        ### 2. SUPERS CATEGORIES:
+        - **Dynamic Captions:** Word-by-word or phrase-by-phrase synced text.
+        - **Static Callouts:** Persistent text (e.g., "50% OFF" or "Product Name").
+        - **Kinetic Typography:** Stylized, moving text used for emphasis.
+        - **Headlines:** Large top/bottom text bars that stay throughout the video.
+
+        ### FORMAT RESPONSE AS JSON:
+        {{
+            "detected": boolean,
+            "confidence_score": float, # Certainty of text detection
+            "feature_quality_score": float, # 0.0-1.0 Time text is visible / Total duration
+            "metrics": {{
+                "synchronicity_score": float, # Match between audio and text timing
+                "text_coverage_ratio": float, # Percentage of frame area occupied by text
+                "primary_supers_type": "Dynamic_Captions" | "Static_Callouts" | "Headlines" | "Mixed"
+            }},
+            "visual_analysis": {{
+                "readability_score": float, # Contrast and font clarity (0.0 - 1.0)
+                "is_mobile_safe": boolean, # Is text clear of UI elements (likes/captions)?
+                "font_style": "Minimal" | "Bold/Aggressive" | "Stylized/Brand"
+            }},
+            "temporal_segments": [
+                {{
+                    "start": float,
+                    "end": float,
+                    "text_content": str,
+                    "matches_audio": boolean,
+                    "style": "Caption" | "Emphasis" | "CTA"
+                }}
+            ],
+            "overall_assessment": {{
+                "narrative_reinforcement_score": float, # How well text aids understanding
+                "is_hook_text_present": boolean, # Does text appear in the first 1.5 seconds?
+                "summary": "Technical summary of text overlay strategy"
+            }}
+        }}
+
+        ### EVALUATION STEPS:
+        1. Identify all segments where text is overlaid on the video.
+        2. Compare the text content against the audio track for verbatim or supportive matching.
+        3. Calculate the **feature_quality_score** based on text visibility duration.
+        4. Assess the **synchronicity_score**—lower this if text lingers too long or appears after the audio has passed.
+        5. Verify if text is in the "Mobile Safe Zone" (central area, not blocked by platform UI).
+    """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_product_closeup",
+          name="Product Close-Up",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.BRAND,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Quantifies segments where the product occupies at least 30% of the frame. 
+            This measures standard product visibility and presence within a recognizable 
+            context or environment.
+        """,
+          prompt_template="""
+            Act as a professional Cinematographer and Video Analyst. Your goal is to 
+            measure 'Product Presence' via Close-Up detection.
+            
+            VIDEO METADATA: {metadata_summary}
+
+            ### 1. METRIC DEFINITIONS:
+            - **Product Close-Up (CU):** Product occupies 30% to 59% of the frame area.
+            - **Density Score:** (Total duration of Product CU shots) / (Total video duration).
+            Represented as feature_quality_score in the JSON.
+
+            ### 2. DYNAMIC SCORING (0.0 - 1.0):
+            - 0.9-1.0: Product CU is the primary visual anchor (Density > 60%).
+            - 0.6-0.8: Product is featured in CU at key intervals (Density 30-60%).
+            - 0.1-0.5: Product CU is incidental or brief (Density < 30%).
+
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float, 
+                "feature_quality_score": float, # Based on the Dynamic Scoring scale
+                "metrics": {{
+                    "density_score": float, # MANDATORY: CU duration / Total duration
+                    "average_sfr_percentage": float, # Average Subject-to-Frame ratio for CU shots
+                    "product_identifiability": float, # Clarity of branding (0.0 - 1.0)
+                    "framing_style": "Handheld" | "Studio-Static" | "Pan/Tilt"
+                }},
+                "spatial_analysis": {{
+                    "rule_of_thirds_align": boolean,
+                    "background_distraction_level": "Low" | "Medium" | "High",
+                    "is_product_centered": boolean
+                }},
+                "temporal_segments": [
+                    {{
+                        "start": float,
+                        "end": float,
+                        "sfr_percentage": float,
+                        "description": str 
+                    }}
+                ],
+                "overall_assessment": {{
+                    "visual_impact_score": float,
+                    "is_hook_product_featured": boolean, # Product CU in first 2 seconds?
+                    "summary": "Technical summary of product CU strategy"
+                }}
+            }}
+
+            ### EVALUATION LOGIC:
+            - Only count segments where the Product is the main subject and fills 30%-59% of the frame.
+            - If the product fills >60%, it exceeds this feature and belongs in the 'Extreme' category.
+        """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_product_extreme_closeup",
+          name="Product Extreme Close-Up",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.BRAND,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Quantifies segments where the product is the dominant visual element, 
+            occupying 60% or more of the frame. This measures 'Macro' focus and 
+            high-detail product showcasing.
+        """,
+          prompt_template="""
+            Act as a professional Cinematographer and Video Analyst. Your goal is to 
+            measure 'Product Dominance' via Extreme Close-Up (ECU) detection.
+            
+            VIDEO METADATA: {metadata_summary}
+
+            ### 1. METRIC DEFINITIONS:
+            - **Product Extreme Close-Up (ECU):** Product occupies 60% or more of the frame area.
+            - **Density Score:** (Total duration of Product ECU shots) / (Total video duration).
+            Represented as feature_quality_score in the JSON.
+
+            ### 2. DYNAMIC SCORING (0.0 - 1.0):
+            - 0.9-1.0: Macro-heavy edit; high detail focus (Density > 40%).
+            - 0.6-0.8: Strategic use of macro shots for texture/detail (Density 15-40%).
+            - 0.1-0.5: Incidental or very brief macro moments (Density < 15%).
+
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "feature_quality_score": float, 
+                "metrics": {{
+                    "density_score": float, # MANDATORY: ECU duration / Total duration
+                    "peak_sfr_percentage": float, # Max frame fill observed
+                    "texture_visibility": "Low" | "Medium" | "High", # Does it show material detail?
+                    "lighting_quality": "Flat" | "Cinematic" | "Overexposed"
+                }},
+                "spatial_analysis": {{
+                    "edge_collision": boolean, # Does the product extend beyond frame edges?
+                    "depth_of_field": "Shallow" | "Deep", # Is the background blurred?
+                    "focal_point": str # e.g., "Logo", "Texture", "Nozzle", "Screen"
+                }},
+                "temporal_segments": [
+                    {{
+                        "start": float,
+                        "end": float,
+                        "sfr_percentage": float,
+                        "focus_point": str,
+                        "description": str 
+                    }}
+                ],
+                "overall_assessment": {{
+                    "visual_impact_score": float,
+                    "is_macro_hook": boolean, # Does the video open with a macro shot?
+                    "summary": "Technical summary of product ECU/Macro strategy"
+                }}
+            }}
+
+            ### EVALUATION LOGIC:
+            - Only count segments where the Product fills 60% or more of the frame.
+            - Focus on detail: ECU shots are intended to show the "hero" aspects of the product.
+        """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_product_context_index",
+          name="Product Context & Usage Quality",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.CONNECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Evaluates the 'Show, Don't Tell' quality. Quantifies physical 
+            interaction, environmental realism, and utility demonstration. 
+            Measures both the duration of usage (Density) and the effectiveness 
+            of the demonstration (Quality Score).   
+            """,
+          prompt_template="""
+            Act as a professional Cinematographer and Video Analyst. 
+            Analyze the 'Product-in-Use' effectiveness.
 
             VIDEO METADATA:
             {metadata_summary}
 
-            ANALYZE THESE ASPECTS:
-            1. Visual Style:
-            a) Native Indicators:
-                - Handheld camera work
-                - Natural lighting
-                - Raw/minimal editing
-                - Authentic settings
-                - Personal spaces
-                - Imperfect framing
+            SCORE ON THREE DIMENSIONS (0-100 each):
 
-            b) Commercial Indicators:
-                - Steady camera work
-                - Professional lighting
-                - Polished editing
-                - Studio settings
-                - Perfect framing
-                - Commercial spaces
+            1. INTERACTION DEPTH (40%)
+            - Focus: Physical contact and active engagement.
+            - Criteria: Is the product being handled, worn, consumed, or operated?
+            - 90-100: Detailed, multi-step interaction or sustained use (>4s).
+            - 70-89: Clear physical interaction but brief (2-4s).
+            - 0-69: Minimal touching or product is merely a prop in the frame.
 
-            2. Audio Quality:
-            a) Native Indicators:
-                - Natural acoustics
-                - Ambient sound
-                - Conversational tone
-                - Casual voices
-                - Informal speech
+            2. CONTEXTUAL REALISM (30%)
+            - Focus: The "Where" and "Who". 
+            - Criteria: Is the environment a "lived-in" space (home, gym, office) vs. a sterile studio? 
+            - 90-100: Authentic daily-life setting with natural lighting and relatable user behavior.
+            - 70-89: Recognizable setting but feels slightly "staged" or over-polished.
+            - 0-69: Infomercial style, white backgrounds, or disconnected from reality.
 
-            b) Commercial Indicators:
-                - Studio sound
-                - Clean audio mix
-                - Professional voices
-                - Scripted delivery
-                - Perfect balance
+            3. UTILITY DEMONSTRATION (30%)
+            - Focus: The "Why".
+            - Criteria: Does the interaction show the product's purpose/benefit without needing a voiceover?
+            - 90-100: The usage clearly solves a pain point or achieves a goal (e.g., thirst quenched, app task finished).
+            - 70-89: Product is used correctly but the "benefit" is implied rather than obvious.
+            - 0-69: Random interaction that doesn't showcase what the product actually does.
 
-            3. Presentation Style:
-            a) Native Indicators:
-                - Direct address
-                - Personal tone
-                - Natural pauses
-                - Informal language
-                - Authentic reactions
-
-            b) Commercial Indicators:
-                - Formal delivery
-                - Marketing language
-                - Perfect timing
-                - Scripted speech
-                - Controlled reactions
-
-            4. Content Structure:
-            a) Native Indicators:
-                - Personal narrative
-                - Natural flow
-                - Spontaneous moments
-                - Creator-style
-                - Organic pacing
-
-            b) Commercial Indicators:
-                - Brand messaging
-                - Planned sequences
-                - Staged moments
-                - TV commercial style
-                - Professional flow
+            FINAL CALCULATION:
+            Overall Score = (Interaction * 0.4) + (Realism * 0.3) + (Utility * 0.3)
 
             FORMAT RESPONSE AS JSON:
-            {
-                "detected": boolean,  # True if predominantly native style
+            {{
+                "detected": boolean,
                 "confidence_score": float,
-                "score": integer between 1-4,
-                "evaluation": {
-                    "rationale": "detailed explanation",
-                    "evidence": [
-                        {
-                            "aspect": "visual/audio/presentation/content",
-                            "native_elements": ["found native style markers"],
-                            "commercial_elements": ["found commercial markers"],
-                            "dominant_style": "native/commercial",
-                            "timestamps": [relevant timestamps]
-                        }
-                    ],
-                    "strengths": ["strongest native elements"],
-                    "weaknesses": ["areas appearing commercial"]
-                }
-            }
+                "evaluation": {{
+                    "interaction_depth": {{
+                        "score": int,
+                        "action_type": "physical|consumption|digital|service",
+                        "duration": float,
+                        "evidence": str
+                    }},
+                    "contextual_realism": {{
+                        "score": int,
+                        "environment": str,
+                        "authenticity_level": "natural|staged|studio",
+                        "observation": str
+                    }},
+                    "utility_demo": {{
+                        "score": int,
+                        "benefit_shown": str,
+                        "clarity": "explicit|implicit|none"
+                    }},
+                    "final_scoring": {{
+                        "interaction_weighted": float,
+                        "realism_weighted": float,
+                        "utility_weighted": float,
+                        "total_score": float # Sum of the three weighted scores above
+                    }}
+                }}
+            }}
 
-            EVALUATION CRITERIA:
-            1. Technical Evidence:
-            - Visual style markers
-            - Audio characteristics
-            - Presentation patterns
-            - Content structure
-            - Timing and pacing
-
-            2. Style Assessment:
-            - Balance native vs commercial
-            - Authenticity of execution
-            - Consistency throughout
-            - Overall effectiveness
-
-            3. Scoring Guide:
-            4 - Highly authentic native style
-            3 - Good native style with some commercial elements
-            2 - More commercial with some native elements
-            1 - Fully commercial/professional style
-
-            Remember: Focus on distinguishing between authentic native-style content and professionally produced content attempting to appear native.
+            SCORING GUIDANCE:
+            - HIGH (80+): A "Day-in-the-life" feel. User solves a problem using the product in a real room.
+            - MED (50-79): Product is used, but it feels like a "commercial." Correct use, but overly scripted.
+            - LOW (<50): Product is just sitting there, or being held like a trophy for the camera.
             """,
           extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,  # confirm
+          evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
           include_in_evaluation=True,
           group_by=VideoSegment.FULL_VIDEO,
       ),
       VideoFeature(
-          id="shorts_sfv_adaptation_medium",
-          name="SFV Adaptation Balance",
+          id="shorts_casual_language",
+          name="Casual Language",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.CONNECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Quantifies the informality of the script. Measures the use of everyday language, 
+            slang, contractions, and conversational filler vs. formal/corporate scripted speech.
+        """,
+          prompt_template="""
+            Act as a Linguistic and  Video Analyst. Your goal is to measure 'Tone Informality.'
+
+            VIDEO METADATA:
+            {metadata_summary}
+
+            ### 1. METRIC DEFINITIONS:
+            - **Density Score:** (Duration of conversational/casual speech) / (Total speech duration).
+            - **Informality Rating:** (0.0 - 1.0) 1.0 = "POV/FaceTime" style; 0.5 = Standard commercial; 0.0 = Corporate/Medical.
+
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "feature_quality_score": float,
+                "metrics": {{
+                    "density_score": float,
+                    "slang_presence": boolean,
+                    "filler_word_frequency": "Low" | "Medium" | "High", # e.g., "um", "like", "literally"
+                    "script_type": "Ad-lib/Spontaneous" | "Conversational-Scripted" | "Formal"
+                }},
+                "overall_assessment": {{
+                    "authenticity_score": float, # How 'real' does the speech feel?
+                    "summary": "Analysis of linguistic tone"
+                }}
+            }}
+            """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_humor_index",
+          name="Humor & Comedic Timing",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.CONNECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+        Detects and quantifies attempts at humor, including wit, physical comedy, 
+        satire, or comedic timing.
+    """,
+          prompt_template="""
+        Act as a Creative Strategist. Analyze the video for 'Comedic Intent.'
+
+            VIDEO METADATA:
+            {metadata_summary}
+
+        ### 1. METRIC DEFINITIONS:
+        - **Density Score:** (Duration of comedic setups/payoffs) / (Total video duration).
+        - **Humor Type:** "Observational", "Slapstick", "Deadpan", "Satirical".
+
+        ### FORMAT RESPONSE AS JSON:
+        {{
+            "detected": boolean,
+            "confidence_score": float,
+            "feature_quality_score": float,
+            "metrics": {{
+                "density_score": float,
+                "humor_mechanism": str, # e.g., "Visual gag", "Funny VO", "Reaction"
+                "edge_factor": float # 0.0 (Safe) to 1.0 (Risky/Bold)
+            }},
+            "overall_assessment": {{
+                "entertainment_value": float,
+                "is_hook_funny": boolean,
+                "summary": "Technical summary of humor strategy"
+            }}
+        }}
+    """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="character_driven",
+          name="Character-Driven",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.CONNECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Video features a relatable character whose journey or transformation resonates with audience.
+            Evaluates character prominence, relatability, and narrative journey shown.
+            """,
+          prompt_template="""
+            Act as a Narrative Strategist and Video Analyst. Your goal is to measure 
+            'Character Dominance' and 'Persona-Led Storytelling.'
+
+            VIDEO METADATA:
+            {metadata_summary}
+
+            SCORE ON THREE DIMENSIONS (0-100 each):
+
+            1. CHARACTER PROMINENCE (40% weight)
+               Character is clear protagonist with distinct personality/role
+               Look for: Clear lead character, distinct personality traits, on-screen presence
+               - 90-100: Strong, well-developed protagonist
+               - 70-89: Clear character with distinct personality
+               - 50-69: Character present but underdeveloped
+               - 0-49: No clear character focus
+
+            2. CHARACTER JOURNEY/TRANSFORMATION (30% weight)
+               Character shows visible journey, change, or problem-solving
+               Look for: Before/after transformation, challenge faced, goal achieved, emotional arc
+               - 90-100: Clear narrative journey with visible transformation
+               - 70-89: Character shows clear journey or growth
+               - 50-69: Some journey element but subtle
+               - 0-49: No journey or transformation shown
+
+            3. AUDIENCE RELATABILITY (30% weight)
+               Character is relatable to target audience (emotional, realistic, authentic)
+               Look for: Authentic emotion, realistic situation, audience alignment, genuine engagement
+               - 90-100: Highly relatable, authentic emotion
+               - 70-89: Mostly relatable character
+               - 50-69: Somewhat relatable
+               - 0-49: Not relatable or inauthentic
+
+            FINAL CALCULATION:
+            Overall Score = (Prominence × 0.40) + (Journey × 0.30) + (Relatability × 0.30)
+
+            FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "evaluation": {{
+                    "character_present": boolean,
+                    "character_type": str,
+                    "personality_traits": [str],
+                    "journey_type": str,
+                    "prominence_score": int,
+                    "journey_score": int,
+                    "relatability_score": int,
+                    "weighted_overall": float
+                }}
+            }}""",
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_audio_cta",
+          name="Call to Action (Audio)",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.DIRECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+        Detects and quantifies spoken instructions that direct the viewer to take 
+        action. This includes verbal commands from Voice-Overs (VO) or on-screen talent. 
+        Measures 'CTA Density' and 'Urgency Level' to determine the strength of the 
+        conversion signal.
+    """,
+          prompt_template="""
+        Act as a Direct Response Marketing Analyst. Your goal is to identify and 
+        quantify the spoken Call to Action (CTA).
+        
+        VIDEO METADATA: {metadata_summary}
+
+        ### 1. METRIC DEFINITIONS:
+        - **Density Score:** (Total duration of the spoken CTA) / (Total video duration).
+          Represented as density_score in the JSON.
+        - **CTA Urgency:** (0.0 - 1.0) 1.0 = Explicit command with time-sensitivity (e.g., "Click the link below."); 
+          0.5 = General suggestion (e.g., "Check us out"); 0.1 = Brand mention only.
+
+        ### 2. CTA DELIVERY MODES:
+        - **Direct Address:** On-screen talent looks at camera and gives the CTA.
+        - **Voice-Over (VO):** Narrator delivers the CTA over b-roll or product shots.
+        - **Off-Camera:** Secondary character or background voice mentions the action.
+
+        ### FORMAT RESPONSE AS JSON:
+        {{
+            "detected": boolean,
+            "confidence_score": float, # Certainty that a verbal CTA was issued
+            "feature_quality_score": float, # 0.0-1.0 based on clarity and persuasiveness
+            "metrics": {{
+                "density_score": float, # MANDATORY: CTA duration / Total video duration
+                "cta_urgency_score": float, # 0.0 to 1.0
+                "delivery_method": "On-Screen_Talent" | "Voice-Over" | "Mixed",
+                "cta_type": "Hard_Sell" | "Soft_Suggestion" | "Inspirational"
+            }},
+            "linguistic_analysis": {{
+                "verbatim_text": str, # The exact words used for the CTA
+                "placement_type": "End-Roll" | "Mid-Roll" | "Early-Hook",
+                "contains_incentive": boolean # e.g., "Use code SAVE10", "Free shipping"
+            }},
+            "temporal_segments": [
+                {{
+                    "start": float,
+                    "end": float,
+                    "cta_content": str,
+                    "loudness_relative_to_avg": "Quieter" | "Normal" | "Emphasized"
+                }}
+            ],
+            "overall_assessment": {{
+                "conversion_potential": float, # How likely is this audio to drive a click?
+                "is_cta_at_end": boolean, # Does the audio end on a CTA?
+                "summary": "Technical analysis of verbal CTA effectiveness"
+            }}
+        }}
+
+        ### EVALUATION LOGIC:
+        1. Scan the audio track for imperative verbs (Shop, Buy, Click, Visit, Try, Download).
+        2. Calculate the **density_score** by summing the duration of these verbal triggers.
+        3. Assess **feature_quality_score** based on vocal clarity and "The Ask"—if the CTA is muffled or buried under loud music, lower the score.
+        4. Note the placement: A CTA at the very end is standard; a CTA in the first 5 seconds is a "Fast-Action" strategy.
+    """,
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="special_offer_speech",
+          name="Special Offer (Speech)",
+          category=VideoFeatureCategory.SHORTS,
+          sub_category=VideoFeatureSubCategory.DIRECT,
+          video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Audio/voiceover explicitly announces special offer, discount, or deal.
+            Evaluates clarity of offer type, specific details mentioned, and delivery emphasis.
+            """,
+          prompt_template="""
+            Act as a Direct Response Marketing Analyst. Your goal is to evaluate: Is there a SPECIAL OFFER announced in speech?
+
+            VIDEO METADATA:
+            {metadata_summary}
+
+            SCORE ON THREE DIMENSIONS (0-100 each):
+
+            1. OFFER TYPE CLARITY (40% weight)
+               Clear announcement of what offer is (discount %, deal, promotion type)
+               Look for: "20% off", "Free with purchase", "Buy one get one", "Limited time deal"
+               - 90-100: Very clear offer type with specific details (e.g., "20% off")
+               - 70-89: Clear offer mentioned with reasonable detail
+               - 50-69: Offer mentioned but details vague or implied
+               - 0-49: No offer details in audio
+
+            2. DELIVERY EMPHASIS (35% weight)
+               Strong emphasis given through voice tone, repetition, or prominence
+               Look for: Emphatic tone, repeated mention, early in spot, vocal excitement
+               - 90-100: Strong emphasis with enthusiastic delivery
+               - 70-89: Clear emphasis given in delivery
+               - 50-69: Mentioned with moderate emphasis
+               - 0-49: Buried or casual mention
+
+            3. OFFER PROMINENCE (25% weight)
+               Offer featured continuously or at strategic moments in video
+               Look for: Multiple mentions, mentioned early, highlighted throughout
+               - 90-100: Prominent throughout, multiple emphatic mentions
+               - 70-89: Clear prominence in video
+               - 50-69: Mentioned but not prominent
+               - 0-49: Single casual mention
+
+            FINAL CALCULATION:
+            Overall Score = (OfferClarity × 0.40) + (Emphasis × 0.35) + (Prominence × 0.25)
+
+            FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "evaluation": {{
+                    "offer_type": str,
+                    "offer_details": str,
+                    "delivery_tone": str,
+                    "mention_count": int,
+                    "offer_clarity_score": int,
+                    "emphasis_score": int,
+                    "prominence_score": int,
+                    "weighted_overall": float
+                }}
+            }}""",
+          extra_instructions=[],
+          evaluation_method=EvaluationMethod.LLMS,
+          evaluation_function="",
+          include_in_evaluation=True,
+          group_by=VideoSegment.FULL_VIDEO,
+      ),
+      VideoFeature(
+          id="shorts_production_style_index",
+          name="Production Style",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Evaluate if the video achieves an effective balance between professional production and native social content style.
-                    Videos should blend polished elements with authentic feel through:
-                        1. Production Quality: Well-produced but not overly polished (good lighting/sound while maintaining natural feel)
-                        2. Content Style: Professional execution with authentic elements (real scenarios, genuine testimonials)
-                        3. Presentation: Balanced formality (polished but personable delivery)
-                        4. Authenticity: Strategic inclusion of native content elements (direct address, personal stories)
-                    The goal is finding middle ground between high production value and relatable social content.
-                """,
+        Quantifies the visual 'Lo-Fi' vs. 'Hi-Fi' characteristics of the video. 
+        Measures the presence of UGC (User Generated Content) markers such as 
+        handheld camera movement, natural lighting, and native mobile aesthetics. 
+        Assesses if the video feels like an 'organic post' or a 'produced commercial.'
+    """,
           prompt_template="""
-                    Using both the provided metadata AND your understanding of balanced content style, evaluate how well
-                    this video combines professional and native elements.
+        Act as a professional Cinematographer and Social Media Strategist. Your goal is to 
+        quantify the 'UGC Authenticity' of the production style for this video.
+        
+        VIDEO METADATA: {metadata_summary}
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+        ### 1. METRIC DEFINITIONS:
+        - **Density Score:** (Duration of shots that appear native/UGC) / (Total video duration). 
+          Represented as density_score in the JSON.
+        - **Authenticity Rating:** (0.0 - 1.0) 1.0 = Indistinguishable from an organic user upload; 
+          0.5 = High-quality "Studio-UGC" (professional gear mimicking a mobile look); 
+          0.0 = Traditional high-budget glossy commercial.
 
-                    VIDEO METADATA:
-                    {metadata_summary}
+        ### 2. PRODUCTION MARKERS:
+        - **UGC/Lo-Fi:** Visible handheld jitter, natural/ambient lighting, mobile sensor resolution, "face-to-lens" intimacy.
+        - **Studio-UGC:** Polished vertical framing, stabilized movement, crisp external-mic audio, but retaining a casual feel.
+        - **High-Production:** Cinema-grade lenses, shallow depth of field, artificial 3-point lighting, professional color grading.
 
-                    ANALYZE BALANCED EXECUTION:
-                    1. Production Elements:
-                        a) Professional Components:
-                            - Quality lighting
-                            - Clear audio
-                            - Stable camera work
-                            - Good editing
-                            - Clean composition
-                        b) Natural Elements:
-                            - Real locations
-                            - Authentic settings
-                            - Natural light mix
-                            - Dynamic shooting
-                            - Environmental sound
-                    2. Content Approach:
-                        a) Professional Structure:
-                            - Clear messaging
-                            - Strategic flow
-                            - Quality transitions
-                            - Focused storytelling
-                            - Brand integration
-                        b) Authentic Elements:
-                            - Real scenarios
-                            - Customer stories
-                            - Genuine reactions
-                            - Natural moments
-                            - Personal experiences
-                    3. Presentation Style:
-                        a) Professional Delivery:
-                            - Clear speech
-                            - Good pacing
-                            - Confident delivery
-                            - Quality performance
-                            - Structured flow
-                        b) Natural Connection:
-                            - Direct address
-                            - Conversational tone
-                            - Personal engagement
-                            - Natural enthusiasm
-                            - Authentic reactions
-                    4. Authenticity Balance:
-                        a) Strategic Polish:
-                            - Refined moments
-                            - Key messaging
-                            - Brand standards
-                            - Quality control
-                            - Professional touch
-                        b) Deliberate Authenticity:
-                            - Real testimonials
-                            - Behind-scenes moments
-                            - Candid interactions
-                            - Natural dialogue
-                            - Genuine emotion
+        ### FORMAT RESPONSE AS JSON:
+        {{
+            "detected": boolean,
+            "confidence_score": float, # Certainty of production style classification
+            "feature_quality_score": float, # 0.0-1.0 (How well it executes the intended style)
+            "metrics": {{
+                "density_score": float, # MANDATORY: UGC-style duration / Total video duration
+                "camera_stability": "Handheld" | "Stabilized" | "Tripod/Static",
+                "lighting_type": "Natural/Ambient" | "Studio-Polished" | "Raw/Incidental",
+                "equipment_look": "Mobile_Phone" | "Professional_Camera" | "Webcam"
+            }},
+            "aesthetic_analysis": {{
+                "platform_native_elements": boolean, # Use of top social media app fonts/stickers
+                "environment_realism": "Lived-in/Messy" | "Curated/Clean" | "Studio/Abstract",
+                "interface_compliance": "Safe_Zone_Optimized" | "UI_Overlapped"
+            }},
+            "temporal_segments": [
+                {{
+                    "start": float,
+                    "end": float,
+                    "style_type": "True_UGC" | "Studio_UGC" | "Corporate_Ad",
+                    "description": str 
+                }}
+            ],
+            "overall_assessment": {{
+                "lofi_index": float, # 0.0 (Glossy) to 1.0 (Raw)
+                "is_hook_native_looking": boolean, # Does it look like an organic post in the first 2s?
+                "summary": "Technical analysis of the production authenticity and stylistic approach"
+            }}
+        }}
 
-                    FORMAT RESPONSE AS JSON:
-                    {
-                        "detected": boolean,  # True if balanced style achieved
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {
-                            "rationale": "detailed explanation of balance achieved",
-                            "evidence": [
-                                {
-                                    "aspect": "production/content/presentation/authenticity",
-                                    "professional_elements": ["polished elements found"],
-                                    "authentic_elements": ["native elements found"],
-                                    "balance_quality": "how well elements combine",
-                                    "timestamps": [relevant timestamps]
-                                }
-                            ],
-                            "strengths": ["successful balance points"],
-                            "weaknesses": ["areas needing better balance"]
-                        }
-                    }
-
-                    EVALUATION CRITERIA:
-                    1. Technical Balance:
-                    - Production quality level
-                    - Authenticity markers
-                    - Style integration
-                    - Overall execution
-
-                    2. Content Balance:
-                    - Message clarity
-                    - Natural elements
-                    - Flow effectiveness
-                    - Authenticity level
-
-                    3. Scoring Guide:
-                    4 - Perfect balance of professional and authentic elements
-                    3 - Good balance with slight lean toward one style
-                    2 - Imbalanced but attempts at combination
-                    1 - Too heavily weighted to one extreme
-
-                    Remember: Look for strategic combination of professional quality and authentic elements that creates relatable yet polished content.
-                """,
+        ### EVALUATION LOGIC:
+        1. Observe camera physics: Mobile devices have distinct micro-jitters; cinema rigs have "weight."
+        2. Check for "Safe Zone" awareness: Is the subject framed to avoid being covered by top social media UI (avatars, descriptions)?
+        3. Calculate **density_score** by identifying the total runtime of "authentic-looking" footage.
+        4. Lower the **Authenticity Rating** if the video uses professional motion graphics or studio-exclusive color palettes.
+    """,
           extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,  # confirm
+          evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
           include_in_evaluation=True,
           group_by=VideoSegment.FULL_VIDEO,
       ),
       VideoFeature(
           id="shorts_sfv_adaptation_high",
-          name="Short Form Video Adaptation_high",
+          name="Short Form Video Adaptation",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Analyze how well the video adapts to native short form video style versus maintaining
-                    traditional commercial production. Low adaptation videos maintain professional and polished
-                    commercial style without incorporating platform-native elements, while high adaptation
-                    successfully emulates organic social media content.
-                """,
+            Quantifies the 'Native Emulation' of the production. Measures how effectively 
+            the video mimics organic social content through lo-fi aesthetics, handheld 
+            camera physics, and non-commercial editing patterns.
+        """,
           prompt_template="""
-                    Analyze whether this video maintains traditional commercial production or successfully adapts to short form style.
+            Act as a Social Media Trends Analyst and Video Strategist. Your goal is to 
+            quantify the 'UGC Authenticity' of the production style.
+            
+            VIDEO METADATA: {metadata_summary}
 
-                    VIDEO METADATA:
-                    {metadata_summary}
+            ### 1. PRODUCTION MARKERS:
+            - **Native/Lo-Fi:** Handheld jitter, natural ambient lighting, mobile sensor resolution, face-to-lens intimacy.
+            - **Studio-Hybrid:** Vertical framing and casual tone but with professional lighting or stabilized movement.
+            - **Commercial/Glossy:** Cinema lenses, 3-point lighting, professional color grading, or traditional ad pacing.
 
-                    TWO KEY PRODUCTION STYLES:
-                    1. TRADITIONAL COMMERCIAL STYLE (LOW ADAPTATION):
-                        a) Production Quality:
-                            - Professional studio lighting
-                            - Perfect exposure control
-                            - Steady camera work
-                            - Polished transitions
-                            - Commercial-grade audio
-                        b) Content Approach:
-                            - Standard commercial pacing
-                            - Formal presentation
-                            - Professional talent
-                            - Scripted delivery
-                            - Brand-first messaging
-                        c) Visual Elements:
-                            - Perfect framing
-                            - Commercial graphics
-                            - Professional effects
-                            - Studio environment
-                            - Controlled staging
-                    2. NATIVE SHORT FORM STYLE (HIGH ADAPTATION):
-                        a) Production Elements:
-                            - Natural or mixed lighting
-                            - Dynamic camera work
-                            - Casual transitions
-                            - Authentic feel
-                            - Raw audio elements
-                        b) Content Approach:
-                            - Platform-native pacing
-                            - Personal presentation
-                            - Authentic delivery
-                            - Natural moments
-                            - Creator-style messaging
-                        c) Visual Elements:
-                            - Flexible framing
-                            - Native graphics/text
-                            - Trend-based effects
-                            - Real environments
-                            - Natural staging
+            ### 2. DENSITY & QUALITY LOGIC:
+            - **Density Score:** (Duration of shots that appear native/organic) / (Total video duration).
+            - **Feature Quality Score (Authenticity):** 
+                * 0.9-1.0: Indistinguishable from an organic user post.
+                * 0.7-0.8: High-quality Studio-UGC (mimics mobile but feels "clean").
+                * 0.4-0.6: Polished commercial with minor native elements.
+                * 0.0-0.3: Traditional high-budget commercial style.
 
-                    FORMAT RESPONSE AS JSON:
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float, 
+                "feature_quality_score": float, # The 0.0-1.0 Authenticity Rating
+                "metrics": {{
+                    "density_score": float, # Duration of organic style / Total duration
+                    "camera_stability": "Handheld" | "Stabilized" | "Static",
+                    "lighting_type": "Natural" | "Studio" | "Mixed",
+                    "edit_style": "Fast-Cut" | "Long-Take" | "Jump-Cuts"
+                }},
+                "aesthetic_analysis": {{
+                    "lofi_index": float, # 0.0 (Glossy) to 1.0 (Raw)
+                    "is_hook_native": boolean, # Does the first 3s look like a post, not an ad?
+                    "platform_native_vibe": boolean # Use of native-style fonts/graphics
+                }},
+                "temporal_segments": [
                     {{
-                        "detected": boolean,  # TRUE for high adaptation, FALSE for low
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "production_style": {{
-                                "observed_level": str,  # "Traditional Commercial" or "Native Short Form"
-                                "key_elements": [
-                                    {{
-                                        "element": str,
-                                        "style_type": str,
-                                        "timestamp": float,
-                                        "description": str
-                                    }}
-                                ],
-                                "overall_quality": str
-                            }},
-                            "content_approach": {{
-                                "presentation_style": str,
-                                "delivery_type": str,
-                                "authenticity_level": str,
-                                "key_moments": [
-                                    {{
-                                        "timestamp": float,
-                                        "description": str,
-                                        "style_indicator": str
-                                    }}
-                                ]
-                            }},
-                            "visual_elements": {{
-                                "framing_style": str,
-                                "graphics_type": str,
-                                "effects_approach": str,
-                                "environment": str,
-                                "key_visuals": [str]
-                            }},
-                            "adaptation_markers": {{
-                                "traditional_elements": [
-                                    {{
-                                        "type": str,
-                                        "description": str,
-                                        "impact": str
-                                    }}
-                                ],
-                                "native_elements": [
-                                    {{
-                                        "type": str,
-                                        "description": str,
-                                        "impact": str
-                                    }}
-                                ]
-                            }},
-                            "overall_assessment": {{
-                                "adaptation_level": str,  # "High", "Medium", or "Low"
-                                "style_balance": str,
-                                "authenticity_score": float,
-                                "key_observations": [str]
-                            }}
-                        }}
+                        "start": float,
+                        "end": float,
+                        "style_type": "Native" | "Hybrid" | "Commercial",
+                        "description": str
                     }}
+                ],
+                "overall_assessment": {{
+                    "visual_impact_score": float, # Effectiveness for mobile engagement
+                    "summary": "Concise technical summary of production authenticity"
+                }}
+            }}
 
-                    EVALUATION NOTES:
-                    1. Production Assessment:
-                        - Note production quality
-                        - Consider intentional style choices
-                        - Evaluate overall approach
-                        - Assess technical elements
-                    2. Content Analysis:
-                        - Check presentation style
-                        - Evaluate authenticity
-                        - Note delivery approach
-                        - Consider engagement style
-                    3. Visual Elements:
-                        - Analyze framing choices
-                        - Assess graphics style
-                        - Review effects usage
-                        - Consider environment
-
-                    CONFIDENCE SCORING:
-                        - Clear Commercial (0.0-0.3): Maintains traditional style
-                        - Mixed Elements (0.4-0.6): Combines both styles
-                        - Platform Native (0.7-1.0): Successfully adapts to platform
-
-                    IMPORTANT CONSIDERATIONS:
-                        1. High production doesn't automatically mean low adaptation
-                        2. Look for intentional style choices
-                        3. Consider platform-specific elements
-                        4. Note authenticity markers
-                        5. Evaluate overall effectiveness
-                """,
+            ### EVALUATION LOGIC:
+            - **The Hook:** If the first 3 seconds are "Native" in style, increase the feature_quality_score.
+            - **Intent:** Distinguish between intentional Lo-Fi style and poor production quality.
+        """,
           extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,  # confirm
+          evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
           include_in_evaluation=True,
           group_by=VideoSegment.FULL_VIDEO,
@@ -774,1443 +1002,63 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Does the video use emojis as visual elements? Detection includes:
-                    1. Standard emoji characters in text overlays
-                    2. Animated emoji effects
-                    3. Emoji-style stickers or graphics
-                    4. Platform-specific emoji features
-                    Emojis must be intentionally added as creative elements, not incidentally captured in screenshots or user content.
-                """,
+            Detects intentional creative emoji use: 1. Standard characters in text, 
+            2. Animated effects, 3. Emoji-style stickers/graphics, 
+            4. Platform-specific features. Excludes incidental background captures.
+        """,
           prompt_template="""
-                    Using the provided metadata, analyze for intentional emoji usage in the video.
+            Act as a Visual Researcher and Social Media Analyst. Your goal is to 
+            identify and quantify the use of emojis as creative overlays.
+            
+            VIDEO METADATA: {metadata_summary}
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+            ### 1. EMOJI TYPES:
+            - **Standard:** Unicode emoji characters within text overlays.
+            - **Animated:** Emojis that pop, shake, or move.
+            - **Stickers:** Large, graphical emoji-style elements or platform-native stickers.
 
-                    VIDEO METADATA:
-                    {metadata_summary}
+            ### 2. DENSITY & QUALITY LOGIC:
+            - **Density Score:** (Sum of seconds with visible emojis) / (Total video duration).
+            - **Feature Quality Score:** 
+                * 0.9-1.0: Strategic use (syncs with audio, emphasizes key points).
+                * 0.6-0.8: Moderate use, primarily decorative.
+                * 0.1-0.5: Incidental or poorly placed (covers key subjects).
+                * 0.0: No emojis detected.
 
-                    EMOJI INDICATORS:
-                    1. Visual Elements:
-                        - Standard emoji graphics
-                        - Animated emoji effects
-                        - Emoji-style stickers
-                        - Reaction emojis
-                        - Decorative emojis
-                    2. Text Integration:
-                        - Emoji in captions
-                        - Text-emoji combinations
-                        - Emoji punctuation
-                        - Emoji emphasis
-                        - Emoji sequences
-                    3. Creative Usage:
-                    - Transition effects
-                    - Reaction overlays
-                    - Mood indicators
-                    - Visual emphasis
-                    - Story elements
-
-                    DETECTION REQUIREMENTS:
-                    1. Visual Presence:
-                        - Clear emoji display
-                        - Intentional placement
-                        - Creative purpose
-                        - Good visibility
-                        - Proper rendering
-                    2. Usage Context:
-                        - Strategic placement
-                        - Message support
-                        - Visual enhancement
-                        - Audience engagement
-                        - Style elements
-
-                    FORMAT RESPONSE AS JSON:
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "feature_quality_score": float, # 0.0-1.0 based on narrative relevance
+                "metrics": {{
+                    "density_score": float, # Total emoji duration / Total duration
+                    "emoji_count_estimate": int, 
+                    "style": "Static" | "Animated" | "Kinetic",
+                    "placement": "Anchored_to_Text" | "Floating" | "Center_Pop"
+                }},
+                "spatial_analysis": {{
+                    "safe_zone_compliance": boolean, # Avoids UI overlap at bottom/right
+                    "primary_purpose": "Emphasis" | "Tone" | "CTA" | "Decorative"
+                }},
+                "temporal_segments": [
                     {{
-                        "detected": boolean,  # True if emojis are used
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of emoji usage",
-                            "evidence": [
-                                {{
-                                    "type": "visual/text/animated",
-                                    "emoji_content": "description of emoji",
-                                    "usage_type": "how emoji is used",
-                                    "timestamp": float,
-                                    "impact": "effect on content"
-                                }}
-                            ],
-                            "strengths": ["effective emoji usage"],
-                            "weaknesses": ["questionable or unclear usage"]
-                        }}
+                        "start": float,
+                        "end": float,
+                        "emoji_type": str,
+                        "description": str
                     }}
-
-                    EVALUATION CRITERIA:
-                    1. Presence Verification:
-                        - Clear emoji identification
-                        - Intentional usage
-                        - Proper display
-                        - Creative purpose
-                    2. Usage Assessment:
-                        - Strategic placement
-                        - Visual effectiveness
-                        - Message enhancement
-                        - Style integration
-                    3. Scoring Guide:
-                        - Clear, strategic emoji usage
-                        - Present but limited emoji usage
-                        - Minimal or unclear emoji elements
-                        - No emoji usage detected
-
-                    Remember: Focus on intentionally added emoji elements used for creative or communicative purposes.
-            """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_micro_trend",
-          name="Micro-Trend Usage",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video incorporate a micro-trend? Micro-trends are short-lived content patterns that:
-                    1. Capture attention briefly (days to weeks)
-                    2. Often stem from relatable human behaviors
-                    3. Follow recognizable patterns:
-                        - Specific audio/music trends
-                        - Visual style patterns
-                        - Specific transitions or effects
-                        - Popular challenge formats
-                        - Trending content structures
-                        - Viral behavioral patterns
-                    Detection focuses on identifying elements that match known micro-trend characteristics,
-                    even if the specific trend is no longer current."
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your understanding of social media trends, analyze for micro-trend implementation.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    MICRO-TREND INDICATORS:
-                    1. Audio Patterns:
-                        - Trending sounds/music
-                        - Popular audio clips
-                        - Sound effect trends
-                        - Voice effect patterns
-                        - Audio transitions
-                    2. Visual Elements:
-                        - Signature transitions
-                        - Trending effects
-                        - Style patterns
-                        - Popular formats
-                        - Visual challenges
-                    3. Content Structure:
-                        - Trend-based formats
-                        - Challenge structures
-                        - Pattern repetition
-                        - Setup-payoff trends
-                        - Behavioral loops
-                    4. Engagement Elements:
-                        - Trend participation
-                        - Pattern recognition
-                        - Community references
-                        - Shared behaviors
-                        - Cultural moments
-
-                    TREND CHARACTERISTICS:
-                    1. Pattern Recognition:
-                        - Clear format adoption
-                        - Trend-based structure
-                        - Pattern replication
-                        - Style matching
-                        - Element copying
-                    2. Implementation Quality:
-                        - Pattern accuracy
-                        - Trend understanding
-                        - Element execution
-                        - Style authenticity
-                        - Format adherence
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if micro-trend identified
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of trend identification",
-                            "evidence": [
-                                {{
-                                    "trend_type": "audio/visual/structural/behavioral",
-                                    "pattern": "specific trend elements",
-                                    "implementation": "how trend is used",
-                                    "timestamps": [float],
-                                    "quality": "execution assessment"
-                                }}
-                            ],
-                            "strengths": ["successful trend elements"],
-                            "weaknesses": ["questionable or weak elements"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Trend Identification:
-                        - Clear pattern match
-                        - Element recognition
-                        - Structure alignment
-                        - Format adherence
-                    2. Implementation Analysis:
-                        - Pattern accuracy
-                        - Element quality
-                        - Style authenticity
-                        - Execution effectiveness
-                    3. Scoring Guide:
-                        - Clear, well-executed micro-trend usage
-                        - Identifiable trend with some execution issues
-                        - Attempted trend usage but unclear or poor execution
-                        - No identifiable micro-trend elements
-
-                    Remember: Focus on identifying pattern matches to known micro-trend characteristics, even if trend
-                    is no longer current.
-                    Consider both obvious trend elements (audio, visuals) and subtle patterns (behavior, structure).
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_meso_trend",
-          name="Meso-Trend Usage",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video utilize a meso-trend? Meso-trends are established content patterns that:
-                    1. Have longer lifespans than micro-trends
-                    2. Are integrated into platform culture
-                    3. Include established formats such as:
-                        - Storytime video structures
-                        - Platform-specific challenges
-                        - Signature transition styles
-                        - Standard reveal formats
-                        - Common tutorial structures
-                        - Established content templates
-                    Detection focuses on identifying elements that match established platform-specific content patterns and formats.
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your understanding of platform content patterns, analyze for meso-trend implementation.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    MESO-TREND CATEGORIES:
-                    1. Content Formats:
-                        - Storytime structures
-                        - Tutorial patterns
-                        - Review formats
-                        - Challenge templates
-                        - Reveal sequences
-                        - List-style content
-                    2. Platform Conventions:
-                        - Standard transitions
-                        - Common effects
-                        - Established filters
-                        - Traditional edits
-                        - Regular formats
-                    3. Structural Elements:
-                        - Hook patterns
-                        - Pacing structures
-                        - Timing conventions
-                        - Setup-payoff formats
-                        - Narrative flows
-                    4. Engagement Patterns:
-                        - Call-to-action styles
-                        - Interaction prompts
-                        - Community formats
-                        - Response structures
-                        - Participation models
-
-                    ASSESSMENT CRITERIA:
-                        1. Format Recognition:
-                            - Clear pattern match
-                            - Established structure
-                            - Platform alignment
-                            - Cultural fit
-                            - Format adherence
-                        2. Implementation Quality:
-                            - Structure accuracy
-                            - Format understanding
-                            - Element execution
-                            - Style authenticity
-                            - Pattern consistency
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if meso-trend identified
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of trend identification",
-                            "evidence": [
-                                {{
-                                    "format_type": "content/platform/structural/engagement",
-                                    "pattern": "specific format elements",
-                                    "implementation": "how format is used",
-                                    "timestamps": [float],
-                                    "quality": "execution assessment"
-                                }}
-                            ],
-                            "strengths": ["successful format elements"],
-                            "weaknesses": ["questionable or weak elements"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Format Identification:
-                        - Clear structure match
-                        - Pattern recognition
-                        - Platform alignment
-                        - Cultural integration
-                    2. Implementation Analysis:
-                        - Format accuracy
-                        - Element quality
-                        - Style consistency
-                        - Execution effectiveness
-                    3. Scoring Guide:
-                        - Clear, well-executed meso-trend format
-                        - Identifiable format with some execution issues
-                        - Attempted format but unclear or poor execution
-                        - No identifiable meso-trend elements
-
-                    Remember: Focus on identifying established, longer-lasting content formats and platform-specific patterns.
-                    Consider both structural elements (format, pacing) and cultural elements (conventions, expectations).
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_macro_trend",
-          name="Macro-Trend Implementation",
-          category="shorts",
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video align with broader cultural macro-trends? Macro-trends are long-term societal movements that:
-                        1. Reflect major cultural shifts (up to a decade in duration)
-                        2. Address significant societal values or movements such as:
-                            - Social justice and equality
-                            - Environmental sustainability
-                            - Mental health awareness
-                            - Body positivity
-                            - Digital transformation
-                            - Cultural diversity
-                            - Generational values
-                    Detection focuses on identifying authentic alignment with and contribution to these broader cultural conversations.
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your understanding of societal trends, analyze for macro-trend implementation.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    MACRO-TREND CATEGORIES:
-                    1. Social Movements:
-                        - Gender equality
-                        - Racial justice
-                        - LGBTQ+ rights
-                        - Body positivity
-                        - Age inclusion
-                        - Disability rights
-                        - Cultural representation
-                    2. Environmental Concerns:
-                        - Sustainability
-                        - Climate action
-                        - Eco-consciousness
-                        - Ethical consumption
-                        - Zero waste
-                        - Clean energy
-                        - Environmental justice
-                    3. Wellness & Health:
-                        - Mental health awareness
-                        - Work-life balance
-                        - Digital wellbeing
-                        - Holistic health
-                        - Self-care
-                        - Mindfulness
-                        - Health equity
-                    4. Technological Shifts:
-                        - Digital transformation
-                        - AI integration
-                        - AR/VR adoption
-                        - Remote lifestyle
-                        - Digital privacy
-                        - Tech ethics
-                        - Digital inclusion
-
-                    5. Cultural Values:
-                        - Authenticity
-                        - Transparency
-                        - Community focus
-                        - Ethical practices
-                        - Social responsibility
-                        - Inclusivity
-                    - Cultural heritage
-
-                    IMPLEMENTATION ANALYSIS:
-                    1. Authenticity Check:
-                        - Genuine commitment
-                        - Deep understanding
-                        - Meaningful contribution
-                        - Long-term alignment
-                        - Value integration
-                    2. Message Quality:
-                        - Clear communication
-                        - Value alignment
-                        - Cultural sensitivity
-                        - Impact potential
-                        - Message authenticity
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if macro-trend identified
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of macro-trend alignment",
-                            "evidence": [
-                                {{
-                                    "trend_category": "social/environmental/wellness/tech/cultural",
-                                    "specific_trend": "identified macro-trend",
-                                    "implementation": {{
-                                        "approach": "how trend is addressed",
-                                        "authenticity": "authenticity assessment",
-                                        "depth": "depth of engagement",
-                                        "impact": "potential influence"
-                                    }},
-                                    "timestamps": [float],
-                                    "elements": ["specific trend elements"]
-                                }}
-                            ],
-                            "strengths": ["effective trend elements"],
-                            "weaknesses": ["areas needing improvement"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Trend Identification:
-                    - Clear movement alignment
-                    - Cultural relevance
-                    - Societal impact
-                    - Value reflection
-                    2. Implementation Quality:
-                        - Authenticity level
-                        - Message clarity
-                        - Cultural sensitivity
-                        - Value integration
-                    3. Scoring Guide:
-                        - Deep, authentic engagement with macro-trend
-                        - Clear trend alignment with some depth
-                        - Surface-level trend connection
-                        - No clear macro-trend engagement
-
-                    Remember: Focus on identifying genuine engagement with significant cultural movements and societal values.
-                    Consider both explicit statements and implicit demonstrations of macro-trend alignment.
-                    Evaluate authenticity and depth of engagement versus superficial trend adoption.
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_traditional_ad",
-          name="Traditional Ad Style",
-          category=VideoFeatureCategory.SHORTS,  # Changed to Shorts category
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video feel like a traditional TV commercial rather than social video content?
-                    Traditional ad indicators include:
-                        1. Professional production quality matching TV standards
-                        2. Formal advertising structure and pacing
-                        3. Commercial-style presentation and messaging
-                        4. Professional talent and scripted delivery
-                        5. Studio-quality lighting and sound
-                        6. Standard advertising format execution
-                """,
-          prompt_template="""
-                    Using the provided metadata, evaluate if this content matches traditional TV commercial style rather than social media content.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    TRADITIONAL AD INDICATORS:
-                    1. Production Elements:
-                        - Studio-quality lighting
-                        - Professional audio mix
-                        - Commercial-grade editing
-                        - Perfect framing
-                        - High-end equipment usage
-                        - Professional color grading
-                    2. Content Structure:
-                        - Standard ad narrative
-                        - Traditional pacing
-                        - Commercial messaging
-                        - Brand presentation
-                        - Product demonstration
-                        - Professional scripting
-                    3. Presentation Style:
-                        - Professional talent
-                        - Scripted delivery
-                        - Formal presentation
-                        - Polished performance
-                        - Commercial acting
-                        - Brand spokesperson style
-                    4. Commercial Elements:
-                        - Traditional ad format
-                        - Standard shot sequences
-                        - Professional transitions
-                        - Commercial music
-                        - Professional voice-over
-                        - Standard ad timing
-                    NON-TRADITIONAL INDICATORS:
-                    1. Social Elements Missing:
-                        - Creator-style delivery
-                        - Platform-specific features
-                        - Native content feel
-                        - Community engagement
-                        - Authentic moments
-                        - Personal touch
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if traditional TV ad style
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of traditional ad assessment",
-                            "evidence": [
-                                {{
-                                    "element_type": "production/content/presentation/format",
-                                    "commercial_indicators": ["specific traditional elements"],
-                                    "timestamps": [float],
-                                    "impact": "how it creates TV ad feel"
-                                }}
-                            ],
-                            "strengths": ["clear traditional ad elements"],
-                            "weaknesses": ["elements deviating from traditional style"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Commercial Style:
-                        - Professional production
-                        - Traditional structure
-                        - Commercial delivery
-                        - Standard format
-
-                    2. Social Style Absence:
-                        - Lacks platform features
-                        - Missing native elements
-                        - No creator style
-                        - Formal vs authentic
-
-                    3. Scoring Guide:
-                        - Completely traditional TV ad style
-                        - Mostly traditional with minor social elements
-                        - Mixed style but leaning traditional
-                        - Does not feel like traditional TV ad
-
-                    Remember: Focus on identifying clear markers of traditional TV commercial style versus social media content approaches.
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_partial_social",
-          name="Partial Social Style (25-50%)",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video show moderate social media characteristics (25-50% social feel)? Content should:
-                    1. Maintain primarily professional/commercial style
-                    2. Include some social media elements
-                    3. Balance roughly 25-50% social characteristics with traditional production
-                    4. Show intentional but limited platform-style elements
-                    Detection focuses on identifying clear but limited social media content characteristics while
-                    maintaining primarily traditional production values.
-                """,
-          prompt_template="""
-                    Using the provided metadata, evaluate if this content shows partial (25-50%) social media characteristics.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    SOCIAL ELEMENTS TO DETECT (25-50%):
-                    1. Limited Platform Features:
-                        - Some native elements
-                        - Basic platform tools
-                        - Simple effects
-                        - Light social formatting
-                        - Casual moments
-                    2. Partial Creator Style:
-                        - Occasional direct address
-                        - Some informal elements
-                        - Limited personal touch
-                        - Brief authentic moments
-                        - Casual segments
-                    3. Mixed Production Quality:
-                        - Mostly professional
-                        - Some natural lighting
-                        - Occasional raw footage
-                        - Limited casual shots
-                        - Mixed editing styles
-                    4. Balanced Delivery:
-                        - Primarily scripted
-                        - Some natural moments
-                        - Limited casual speech
-                        - Occasional authenticity
-                        - Mixed presentation
-
-                    ASSESS RATIO (25-50%):
-                    1. Time Distribution:
-                        - Social elements duration
-                        - Traditional segments
-                        - Style transitions
-                        - Element balance
-                        - VideoFeature timing
-                    2. Element Integration:
-                        - VideoFeature mixing
-                        - Style blending
-                        - Transition quality
-                        - Balance maintenance
-                        - Integration smoothness
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if 25-50% social elements
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of partial social style",
-                            "evidence": [
-                                {{
-                                    "element_type": "platform/creator/production/delivery",
-                                    "social_aspects": ["specific social elements"],
-                                    "traditional_aspects": ["professional elements"],
-                                    "ratio_estimate": "percentage social vs traditional",
-                                    "timestamps": [float]
-                                }}
-                            ],
-                            "strengths": ["successful partial integration"],
-                            "weaknesses": ["balance issues"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Social Element Detection:
-                        - Clear social features
-                        - Limited implementation
-                        - Intentional usage
-                        - Controlled integration
-                    2. Balance Assessment:
-                        - 25-50% social feel
-                        - Majority traditional
-                        - Appropriate mixing
-                        - Intentional limitation
-                    3. Scoring Guide:
-                        - Perfect 25-50% social balance
-                        - Close to target range but slightly off
-                        - Uneven balance or unclear ratio
-                        - Outside 25-50% range entirely
-
-                    Remember: Focus on identifying clear but limited (25-50%) social media characteristics while maintaining
-                    primarily traditional production elements.
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_mostly_social",
-          name="Predominantly Social Style (75%+)",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video predominantly display social media characteristics (75% or more social feel)? Content should:
-                        1. Strongly align with platform-native content style
-                        2. Show minimal traditional commercial elements
-                        3. Maintain authentic, creator-style approach
-                        4. Use platform-specific features extensively
-                        5. Follow social media content conventions
-                    Detection focuses on identifying strong social media characteristics that comprise at least 75% of the content's
-                    style and approach.""",
-          prompt_template="""
-                    Using the provided metadata, evaluate if this content shows predominant (75%+) social media characteristics.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    STRONG SOCIAL INDICATORS (75%+):
-                    1. Platform-Native Elements:
-                        - Heavy platform feature use
-                        - Native content structure
-                        - Platform-specific effects
-                        - Social formatting
-                        - Community engagement style
-                    2. Creator-Style Approach:
-                        - Direct audience address
-                        - Personal tone/style
-                        - Authentic delivery
-                        - Natural presentation
-                        - Community connection
-                    3. Production Style:
-                        - Natural lighting
-                        - Raw/authentic footage
-                        - Platform-typical editing
-                        - Casual shooting style
-                        - Native visual approach
-                    4. Content Delivery:
-                        - Conversational tone
-                        - Unscripted moments
-                        - Natural speech patterns
-                        - Authentic reactions
-                        - Community language
-
-                    LIMITED COMMERCIAL ELEMENTS (≤25%):
-                    1. Production Elements:
-                        - Minimal studio quality
-                        - Limited professional polish
-                        - Few formal sequences
-                        - Rare commercial styling
-                        - Minimal traditional ads
-                    2. Content Approach:
-                        - Few scripted moments
-                        - Limited formal messaging
-                        - Minimal traditional structure
-                        - Rare commercial formats
-                        - Few professional techniques
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if 75%+ social elements
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of predominantly social style",
-                            "evidence": [
-                                {{
-                                    "element_type": "platform/creator/production/delivery",
-                                    "social_elements": ["specific social features"],
-                                    "traditional_elements": ["limited commercial aspects"],
-                                    "ratio_estimate": "percentage social vs traditional",
-                                    "timestamps": [float]
-                                }}
-                            ],
-                            "strengths": ["strong social characteristics"],
-                            "weaknesses": ["deviations from social style"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Social Dominance:
-                        - Extensive platform features
-                        - Strong creator style
-                        - Natural production
-                        - Authentic delivery
-                    2. Commercial Limitation:
-                        - Minimal professional elements
-                        - Limited traditional aspects
-                        - Few formal approaches
-                        - Rare commercial styling
-                    3. Scoring Guide:
-                        - Clear 75%+ social media style
-                        - Close to 75% but slightly below
-                        - Mixed style but below 75%
-                        - Predominantly traditional/commercial
-
-                    Remember: Focus on identifying strong social media characteristics that clearly dominate (75%+) the content style and approach.
-                    Look for authentic, platform-native elements while noting limited commercial aspects.
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_transitions",
-          name="Creative Transitions",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video use creative transitions between scenes or segments? Detection includes:
-                        1. Stylized editing transitions
-                        2. Dramatic scene changes
-                        3. Creative match cuts
-                        4. Platform-style transitions
-                        5. Visual transformation effects
-                    Transitions must be intentionally creative or dramatic, not just standard cuts between scenes.
-                """,
-          prompt_template="""
-                    Using the provided metadata, analyze for creative transition usage.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    TRANSITION TYPES:
-                    1. Visual Transitions:
-                        - Match cuts
-                        - Whip pans
-                        - Spin transitions
-                        - Wipe effects
-                        - Jump cuts
-                        - Zoom transitions
-                        - Color transitions
-                    2. Platform Transitions:
-                        - Finger snap changes
-                        - Hand swipe effects
-                        - Sound-synced cuts
-                        - Outfit changes
-                        - Location switches
-                        - Object transformations
-                        - Time shifts
-                    3. Effect Transitions:
-                        - Digital effects
-                        - Visual overlays
-                        - Screen wipes
-                        - Dissolves
-                        - Morphs
-                        - Glitch effects
-                        - Color shifts
-                    4. Creative Elements:
-                        - Coordinated movements
-                        - Prop transitions
-                        - Seamless edits
-                        - Visual tricks
-                        - Creative cuts
-                        - Scene transformations
-                        - Dramatic reveals
-
-                    TRANSITION CHARACTERISTICS:
-                    1. Technical Aspects:
-                        - Timing precision
-                        - Visual smoothness
-                        - Effect quality
-                        - Execution clarity
-                        - Scene integration
-                    2. Creative Impact:
-                        - Visual interest
-                        - Dramatic effect
-                        - Style enhancement
-                        - Flow contribution
-                        - Viewer engagement
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if creative transitions found
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of transition usage",
-                            "evidence": [
-                                {{
-                                    "transition_type": "visual/platform/effect/creative",
-                                    "description": "specific transition details",
-                                    "timestamp": float,
-                                    "duration": float,
-                                    "impact": "transition effectiveness"
-                                }}
-                            ],
-                            "strengths": ["successful transition elements"],
-                            "weaknesses": ["problematic or unclear transitions"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Transition Identification:
-                        - Clear creative intent
-                        - Dramatic change
-                        - Intentional styling
-                        - Visual impact
-                        - Scene connection
-                    2. Quality Assessment:
-                        - Execution precision
-                        - Effect clarity
-                        - Visual appeal
-                        - Style integration
-                        - Flow enhancement
-                    3. Scoring Guide:
-                        - Multiple well-executed creative transitions
-                        - Clear creative transitions with minor issues
-                        - Basic or limited transition usage
-                        - No creative transitions detected
-
-                    Remember: Focus on identifying intentionally creative or dramatic transitions, not just standard cuts between scenes.
-                    Consider both technical execution and creative impact of transitions.
-            """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_gap_utilization",
-          name="Creative Gap Utilization",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Does the video creatively utilize the top and bottom gaps created when adapting horizontal/square content
-                    to vertical format? Creative usage includes:
-                        1. Product imagery in gaps
-                        2. Selling point text/supers
-                        3. Brand elements/logos
-                        4. Complementary visuals
-                        5. Static or animated content
-                    Detection focuses on intentional use of letterbox spaces to enhance the viewing experience and deliver
-                    additional content.
-                """,
-          prompt_template="""
-                    Using the provided metadata, analyze how effectively vertical gaps are utilized for additional content.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    GAP CONTENT TYPES:
-                    1. Product Elements:
-                        - Product images
-                        - VideoFeature showcases
-                        - Detail shots
-                        - Package displays
-                        - Product variations
-                    2. Text Content:
-                        - Selling points
-                        - VideoFeature lists
-                        - Call-to-actions
-                        - Price information
-                        - Product details
-                    3. Brand Elements:
-                        - Logo placements
-                        - Brand colors
-                        - Visual identity
-                        - Brand graphics
-                        - Company info
-                    4. Visual Enhancements:
-                        - Complementary graphics
-                        - Background patterns
-                        - Design elements
-                        - Decorative content
-                        - Visual effects
-
-                    USAGE CHARACTERISTICS:
-                    1. Content Quality:
-                        - Visual clarity
-                        - Text readability
-                        - Design integration
-                        - Brand alignment
-                        - Element balance
-                    2. Animation/Movement:
-                        - Static elements
-                        - Subtle animations
-                        - Motion effects
-                        - Transitions
-                        - Dynamic changes
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if gaps are creatively utilized
-                        "confidence_score": float,
-                        "score": integer between 1-4,
-                        "evaluation": {{
-                            "rationale": "explanation of gap utilization",
-                            "evidence": [
-                                {{
-                                    "location": "top/bottom",
-                                    "content_type": "product/text/brand/visual",
-                                    "elements": ["specific content details"],
-                                    "animation": "static/animated",
-                                    "timestamps": [float],
-                                    "effectiveness": "usage quality"
-                                }}
-                            ],
-                            "strengths": ["successful gap usage"],
-                            "weaknesses": ["problematic or missing elements"]
-                        }}
-                    }}
-
-                    EVALUATION CRITERIA:
-                    1. Content Identification:
-                        - Clear intentional use
-                        - Relevant content
-                        - Quality elements
-                        - Brand alignment
-                        - Visual integration
-                    2. Implementation Quality:
-                        - Design effectiveness
-                        - Content clarity
-                        - Space utilization
-                        - Animation quality
-                        - Overall impact
-                    3. Scoring Guide:
-                        - Excellent creative use of gaps with multiple content types
-                        - Good gap utilization with some content
-                        - Basic or limited gap usage
-                        - No intentional gap utilization
-
-                    Remember: Focus on identifying intentional and strategic use of vertical letterbox spaces.
-                    Consider both static and animated content in these areas.
-                    Evaluate effectiveness of content integration with main video.
-            """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_product_result",
-          name="Product/Service Result",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Ad demonstrates clear product/service outcomes through before/after comparisons, side-by-side
-                    demonstrations, or effectiveness proof. Must show tangible or visible results of using the product/service.
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate for clear product/service results.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
-
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence:
-                        - Visual scene comparisons
-                        - Split-screen content
-                        - Time-lapse sequences
-                        - Result demonstrations
-                        - Transformation shots
-                    2. Result Types to Detect:
-                    a) Before/After:
-                        - Clear transformations
-                        - State changes
-                        - Visible improvements
-                        - Progress shots
-                        - Outcome displays
-                    b) Comparisons:
-                        - Side-by-side views
-                        - With/without product
-                        - Alternative methods
-                        - Competitive demos
-                        - Contrasting results
-                    c) Effectiveness Evidence:
-                        - Performance proof
-                        - Success metrics
-                        - Visible outcomes
-                        - Achievement displays
-                        - Impact demonstration
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "result_demonstrations": [
-                                    {{
-                                        "timestamp": float,
-                                        "type": "before_after/comparison/effectiveness",
-                                        "demonstration_method": str,
-                                        "visual_evidence": str,
-                                        "clarity_score": float
-                                    }}
-                                ],
-                                "supporting_elements": {{
-                                    "visual_aids": [str],
-                                    "text_overlays": [str],
-                                    "speech_context": [str]
-                                }}
-                            }},
-                            "result_quality": {{
-                                "clarity_level": str,
-                                "evidence_strength": str,
-                                "demonstration_effectiveness": str,
-                                "outcome_visibility": str
-                            }},
-                            "combined_assessment": {{
-                                "primary_result_type": str,
-                                "evidence_quality": {{
-                                    "visual_proof": str,
-                                    "supporting_content": str,
-                                    "presentation_clarity": str
-                                }},
-                                "effectiveness_metrics": {{
-                                    "result_clarity": float,
-                                    "proof_strength": float,
-                                    "viewer_understanding": str
-                                }}
-                            }}
-                        }}
-                    }}
-
-                    DETECTION REQUIREMENTS:
-                    1. Valid Result Types:
-                        - Clear before/after demonstrations
-                        - Direct product comparisons
-                        - Measurable effectiveness
-                        - Visible transformations
-                        - Tangible outcomes
-                    2. Result Quality Standards:
-                        - Clear visibility
-                        - Obvious connection to product
-                        - Understandable outcome
-                        - Demonstrable change
-                        - Credible presentation
-                    3. Short-Form Considerations:
-                        - Quick result revelation
-                        - Efficient comparison
-                        - Clear outcome display
-                        - Direct demonstration
-                        - Impactful proof
-
-                    CONFIDENCE SCORING:
-                        - High (0.8-1.0): Clear, undeniable results with strong evidence
-                        - Medium (0.5-0.7): Visible results with some ambiguity
-                        - Low (0.2-0.4): Suggested results but limited proof
-
-                    Remember: Focus on clear, demonstrable outcomes that prove product/service effectiveness in short-form context.
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_creator_name_mention",
-          name="Creator Name Mention",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Ad explicitly mentions the YouTube Creator's name either in visual text overlays or
-                    spoken audio. Must be clear, direct mention of creator's name to qualify.
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate for explicit creator name mentions.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
-
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence:
-                        - Text overlay content
-                        - Speech transcriptions
-                        - Visual graphics
-                        - Scene composition
-                        - Audio clarity
-                    2. Analyze Name References:
-                        - Direct name mentions
-                        - Text displays
-                        - Channel names
-                        - Creator handles
-                        - Personal branding
-
-                    DETECTION REQUIREMENTS:
-                    1. Text Evidence Types:
-                        a) Visual Name Displays:
-                            - Creator name text
-                            - Channel name overlay
-                            - Personal branding text
-                            - Handle/username display
-                            - Name graphics
-                        b) Text Placement:
-                            - Clear visibility
-                            - Readable size
-                            - Intentional display
-                            - Proper formatting
-                            - On-screen duration
-                    2. Audio Evidence Types:
-                        a) Spoken References:
-                            - Direct name mention
-                            - Channel name usage
-                            - Personal introduction
-                            - Self-reference
-                            - Brand identity
-                        b) Speech Clarity:
-                            - Clear pronunciation
-                            - Audible mention
-                            - Intentional reference
-                            - Distinct delivery
-                        - Proper context
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "metadata_analysis": {{
-                                "name_mentions": [
-                                    {{
-                                        "timestamp": float,
-                                        "type": "text/speech",
-                                        "content": str,
-                                        "mention_type": "direct_name/channel/handle",
-                                        "clarity": "high/medium/low"
-                                    }}
-                                ],
-                                "detection_quality": {{
-                                    "text_clarity": str,
-                                    "audio_quality": str,
-                                    "evidence_strength": str
-                                }}
-                            }},
-                            "mention_analysis": {{
-                                "reference_types": [str],
-                                "display_methods": [str],
-                                "context_quality": str
-                            }},
-                            "overall_assessment": {{
-                                "mention_confidence": float,
-                                "primary_evidence": str,
-                                "supporting_factors": [str]
-                            }}
-                        }}
-                    }}
-
-                    DETECTION CRITERIA:
-                    1. Valid Mentions:
-                        - Explicit creator name
-                        - Clear channel name
-                        - Recognizable handle
-                        - Personal branding
-                        - Direct self-reference
-                    2. Invalid Examples:
-                        - Generic greetings
-                        - Unclear references
-                        - Ambiguous terms
-                        - Implied mentions
-                        - Vague identifiers
-
-                    Remember: Only count explicit, clear mentions of creator name/identity - implied or unclear references don't qualify.
-
-                    CONFIDENCE SCORING:
-                        - High (0.8-1.0): Clear, explicit name mentions with strong evidence
-                        - Medium (0.5-0.7): Identifiable mentions with some uncertainty
-                        - Low (0.2-0.4): Possible mentions but limited/unclear evidence
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="shorts_partnership_disclosure",
-          name="Partnership Clearly Disclosed",
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Video contains clear disclosure of partnership between creator and brand through explicit statements,
-                    text overlays, or other unmistakable indicators of sponsored/paid content or brand collaboration.
-                """,
-          prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate for clear partnership disclosure.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
-
-                    YOUR ANALYTICAL TASKS:
-                    1. Detect Disclosure Methods:
-                        a) Visual Disclosures:
-                            - "#ad" or "#sponsored" text
-                            - "Paid partnership" labels
-                            - Sponsored content markers
-                            - Brand collaboration notices
-                            - Partnership declarations
-                        b) Verbal Disclosures:
-                            - "Sponsored by" statements
-                            - Partnership announcements
-                            - Collaboration mentions
-                            - Brand partnership notes
-                            - Sponsorship acknowledgments
-                    2. Disclosure Requirements:
-                        a) Clear Language:
-                            - Explicit partnership terms
-                            - Unambiguous wording
-                            - Direct statements
-                            - Clear sponsorship markers
-                            - Obvious indicators
-                        b) Proper Placement:
-                            - Visible positioning
-                            - Early mention
-                            - Adequate duration
-                            - Legible text
-                            - Audible statements
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "disclosure_instances": [
-                                    {{
-                                        "timestamp": float,
-                                        "type": "visual/verbal",
-                                        "content": str,
-                                        "method": str,
-                                        "clarity_score": float
-                                    }}
-                                ],
-                                "placement_quality": {{
-                                    "visibility": str,
-                                    "timing": str,
-                                    "duration": float
-                                }}
-                            }},
-                            "disclosure_assessment": {{
-                                "clarity_level": str,
-                                "language_explicitness": str,
-                                "disclosure_methods": [str],
-                                "effectiveness": str
-                            }},
-                            "combined_insights": {{
-                                "primary_disclosure": {{
-                                    "content": str,
-                                    "timestamp": float,
-                                    "method": str,
-                                    "effectiveness": str
-                                }},
-                                "supporting_elements": [str],
-                                "overall_clarity": str
-                            }}
-                        }}
-                    }}
-
-                    VALID DISCLOSURE INDICATORS:
-                    1. Direct Terms:
-                        - "Sponsored"
-                        - "Paid partnership"
-                        - "Ad"/"Advertisement"
-                        - "Brand partner"
-                        - "In collaboration with"
-                        - "Thanks to [brand]"
-                        - "Partnered with"
-                        - "[Brand] sponsored"
-                    2. Visual Markers:
-                        - #ad
-                        - #sponsored
-                        - #paidpartnership
-                        - #brandpartner
-                        - Partnership labels
-                        - Sponsorship notices
-
-                    DETECTION REQUIREMENTS:
-                    1. Clear Disclosure:
-                        - Explicit partnership language
-                        - Unambiguous indicators
-                        - Obvious brand connection
-                        - Proper disclosure placement
-                        - Adequate visibility/audibility
-                    2. Invalid/Insufficient:
-                        - Vague references
-                        - Unclear connections
-                        - Hidden disclosures
-                        - Ambiguous terms
-                        - Implied partnerships
-                    3. Short-Form Considerations:
-                        - Early disclosure timing
-                        - Clear visibility
-                        - Efficient communication
-                        - Direct language
-                        - Proper placement
-
-                    CONFIDENCE SCORING:
-                        - High (0.8-1.0): Clear, explicit disclosure with proper placement
-                        - Medium (0.5-0.7): Present but less prominent disclosure
-                        - Low (0.2-0.4): Ambiguous or unclear disclosure
-
-                    Remember: Focus on explicit, unmistakable partnership disclosures that meet legal and ethical standards for sponsored content identification.
-                """,
+                ],
+                "overall_assessment": {{
+                    "is_hook_emoji": boolean, # Emoji present in the first 2 seconds?
+                    "visual_impact_score": float, # Contribution to "organic" feel
+                    "summary": "Summary of emoji integration and effectiveness"
+                }}
+            }}
+
+            ### EVALUATION LOGIC:
+            - **Placement:** Lower the quality score if emojis are in the "Dead Zone" (bottom/right where UI buttons sit).
+            - **Relevance:** Higher impact if the emoji matches the spoken word or emotional tone.
+        """,
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -2219,183 +1067,61 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_personal_character_talk",
-          name="Personal Character Talk",
+          name="Direct to Camera Character Talk",
           category=VideoFeatureCategory.SHORTS,
-          evaluation_criteria=(
-              "The story is driven by a single character (person, mascot etc.)"
-              " that talks directly to camera, creating a personal connection"
-              " with the viewer."
-          ),
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Evaluates the intimacy and continuity of direct lens address. 
+            Measures the 'Breaking of the Fourth Wall' through gaze and conversational delivery.
+            """,
           prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate if a single character drives the story while directly addressing the camera.
+            Act as a Cinematographer and Parasocial Interaction Specialist. 
+            Evaluate: How effectively does the character connect with the viewer via direct lens address?
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+            VIDEO METADATA: {metadata_summary}
 
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
+            SCORE ON THREE DIMENSIONS (0-100 each):
 
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence (from metadata):
-                        - Face detection data
-                        - Speaking patterns
-                        - Camera angle information
-                        - Screen time distribution
-                        - Eye direction indicators
-                    2. Analyze Character Dominance:
-                        - Single character identification
-                        - Screen time percentage
-                        - Narrative control
-                        - Story progression role
-                        - Central vs. supporting presence
-                    3. Evaluate Direct Address:
-                        - Eye contact with camera
-                        - Personal pronouns usage
-                        - Viewer engagement patterns
-                        - Direct questions/statements
-                        - Connection techniques
+            1. GAZE CONTINUITY & INTENSITY (45% weight)
+               Focus: Are the eyes locked on the lens? Is it a "FaceTime" feel?
+               - 90-100: Constant, unwavering eye contact that feels personal.
+               - 70-89: Frequent direct looks, clear address to viewer.
+               - 0-49: Looking at self on screen or off-camera; incidental gaze.
 
-                    DUAL ANALYSIS APPROACH:
-                    1. Technical Pattern Recognition:
-                        a) Character Presence Markers:
-                            - Face detection continuity
-                            - Speaking time allocation
-                            - Visual focus patterns
-                            - Screen positioning
-                            - Scene dominance
-                        b) Direct Address Indicators:
-                            - Forward-facing orientation
-                            - Eye contact maintenance
-                            - Camera angle relationship
-                            - Viewer acknowledgment
-                            - Engagement techniques
-                    2. Communication Psychology Analysis:
-                        a) Character Centrality:
-                            - Story driving role
-                            - Narrative ownership
-                            - Message delivery dominance
-                            - Supporting character contrast
-                            - Plot advancement control
-                        b) Viewer Connection:
-                            - Parasocial relationship cues
-                            - Engagement effectiveness
-                            - Personal connection techniques
-                            - Intimacy establishment
-                            - Trust-building methods
+            2. DELIVERY INTIMACY (30% weight)
+               Focus: Conversational proximity and vocal tone.
+               - 90-100: Casual, peer-to-peer tone; feels unscripted and close.
+               - 70-89: Clear address but slightly presentational.
+               - 0-69: Corporate or formal delivery; distant.
 
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "primary_character": {{
-                                    "appearances": [
-                                        {{
-                                            "timestamp": float,
-                                            "duration": float,
-                                            "speaking": boolean,
-                                            "direct_address": boolean,
-                                            "screen_dominance": "high/medium/low"
-                                        }}
-                                    ],
-                                    "total_screen_time": float,
-                                    "percentage_of_video": float,
-                                    "technical_dominance": {{
-                                        "visual_focus": str,
-                                        "speech_control": str,
-                                        "screen_presence": str
-                                    }}
-                                }},
-                                "direct_address_markers": {{
-                                    "camera_engagement_points": [float],
-                                    "eye_contact_duration": float,
-                                    "viewer_acknowledgment_moments": [float]
-                                }}
-                            }},
-                            "communication_analysis": {{
-                                "character_centrality": {{
-                                    "story_control": str,
-                                    "narrative_ownership": str,
-                                    "message_delivery_role": str
-                                }},
-                                "viewer_connection": {{
-                                    "engagement_quality": str,
-                                    "personal_relationship_building": str,
-                                    "trust_establishment": str
-                                }}
-                            }},
-                            "combined_insights": {{
-                                "single_character_assessment": {{
-                                    "is_primary_driver": boolean,
-                                    "screen_time_dominance": float,
-                                    "story_control_level": str,
-                                    "supporting_character_contrast": str
-                                }},
-                                "direct_address_quality": {{
-                                    "camera_relationship": str,
-                                    "viewer_engagement": str,
-                                    "connection_effectiveness": str
-                                }},
-                                "overall_evaluation": {{
-                                    "character_driven_score": int,  # 1-4 scale
-                                    "direct_address_score": int,  # 1-4 scale
-                                    "combined_effectiveness": str,
-                                    "distinctive_techniques": [str]
-                                }}
-                            }}
-                        }}
-                    }}
+            3. TEMPORAL DOMINANCE (25% weight)
+               Focus: How much of the narrative is led by this direct address?
+               - 90-100: Character address drives the entire video narrative.
+               - 70-89: Significant segments of direct address.
+               - 0-69: Brief intro/outro address only.
 
-                    PROVIDE BOTH:
-                    1. Technical Analysis (from metadata):
-                        - Character detection
-                        - Screen time measurement
-                        - Direct address instances
-                        - Camera relationship
-                    2. Communication Analysis (your evaluation):
-                        - Story driving effectiveness
-                        - Single character dominance
-                        - Direct address quality
-                        - Viewer connection impact
+            FINAL CALCULATION:
+            Overall Score = (Gaze × 0.45) + (Intimacy × 0.30) + (Dominance × 0.25)
 
-                    Remember: Evaluate BOTH aspects - (1) story being driven by a single character AND (2) that character
-                    directly addressing the camera.
-
-                    SCORING CONSIDERATIONS:
-                    1. Single Character Dominance (50%):
-                        - One clear protagonist
-                        - Consistent presence
-                        - Story advancement control
-                        - Minimal supporting roles
-                        - Message delivery ownership
-                    2. Direct Camera Address (50%):
-                        - Clear eye contact
-                        - Viewer acknowledgment
-                        - Personal pronouns (you, we)
-                        - Questions to viewer
-                        - Conversation simulation
-
-                    EVIDENCE EXAMPLES - STRONG DETECTION:
-                        - One person speaks throughout most of video
-                        - Character clearly looks at camera when speaking
-                        - Uses "you" language to address viewer
-                        - Maintains consistent eye contact
-                        - Minimal or no other speaking characters
-                        - Story progresses through main character
-
-                    EVIDENCE EXAMPLES - WEAK DETECTION:
-                        - Multiple equal characters
-                        - Character rarely faces camera
-                        - Third-person narrative style
-                        - No direct viewer engagement
-                        - Divided screen time
-                        - Ensemble-driven narrative
-                """,
+            FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "evaluation": {{
+                    "character_type": str, # e.g., "Creator", "Mascot"
+                    "gaze_consistency": "high"|"medium"|"low",
+                    "delivery_style": str,
+                    "gaze_intensity_score": int,
+                    "delivery_intimacy_score": int,
+                    "temporal_dominance_score": int,
+                    "weighted_overall": float
+                }},
+                "metrics": {{
+                    "density_score": float, # Duration of direct address / Total duration
+                    "is_hook_direct": boolean
+                }}
+            }}""",
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -2404,177 +1130,61 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_native_brand_context",
-          name="Native Brand Context",
+          name="Brand Secondary Element",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    Brand is positioned as a secondary element rather than the main focus of the ad, integrating naturally within
-                    the content.
-                """,
+            Evaluates if the brand is positioned as a secondary, natural element. 
+            High scores indicate the brand feels like part of the environment, not a forced ad.
+            """,
           prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate native brand integration.
+            Act as a Brand Integration Analyst. 
+            Evaluate: Is the brand naturally secondary within the organic content?
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+            VIDEO METADATA:
+            {metadata_summary}
 
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
+            SCORE ON THREE DIMENSIONS (0-100 each):
 
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence (from metadata):
-                        - Brand placement/positioning
-                        - Screen time allocation
-                        - Visual emphasis patterns
-                        - Brand mention context
-                        - Content-to-brand ratio
-                    2. Analyze Integration Strategy:
-                        - How naturally brand appears
-                        - Content-first vs. brand-first approach
-                        - Contextual relevance
-                        - Value-add integration
-                        - Storytelling cohesion
-                    3. Evaluate Brand Balance:
-                        - Content-to-promotion ratio
-                        - Natural vs. forced mentions
-                        - User value prioritization
-                        - Brand prominence level
-                        - Integration authenticity
+            1. NARRATIVE INTEGRATION (40% weight)
+               Focus: Does the brand exist as a natural prop or mention in a larger story?
+               - 90-100: Brand is seamless; story makes sense even without the logo.
+               - 70-89: Brand is clearly secondary but narrative-aligned.
+               - 0-69: Narrative feels forced around the brand (Ad-like).
 
-                    DUAL ANALYSIS APPROACH:
-                    1. Technical Pattern Recognition:
-                        a) Brand Presence Markers:
-                            - Visual appearances
-                            - Text mentions
-                            - Logo placements
-                            - Product displays
-                            - Speaking references
-                        b) Content Emphasis Indicators:
-                            - Story focus
-                            - Value delivery
-                            - Entertainment priority
-                            - Information sharing
-                            - User benefit focus
-                    2. Integration Psychology Analysis:
-                        a) Authenticity Assessment:
-                            - Natural fit evaluation
-                            - Forced vs. organic
-                            - Contextual relevance
-                            - User value alignment
-                            - Experience cohesion
-                        b) Balance Measurement:
-                            - Prominence evaluation
-                            - Secondary positioning
-                            - Content prioritization
-                            - Brand subordination
-                            - Integration quality
+            2. VISUAL SUBTLETY (35% weight)
+               Focus: Is the brand positioned to avoid "Ad Blindness"?
+               - 90-100: Brand is clear but not the focal point (e.g., on clothing or background).
+               - 70-89: Brand is visible but doesn't dominate the center frame.
+               - 0-69: Brand is center-frame, dominant, or high-contrast (Forced focus).
 
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "brand_instances": [
-                                    {{
-                                        "timestamp": float,
-                                        "type": "visual/verbal/text",
-                                        "context": str,
-                                        "prominence": "primary/secondary/subtle",
-                                        "integration_quality": str
-                                    }}
-                                ],
-                                "content_emphasis": {{
-                                    "story_focus": str,
-                                    "value_priority": str,
-                                    "user_benefit_clarity": str
-                                }}
-                            }},
-                            "integration_analysis": {{
-                                "authenticity_assessment": {{
-                                    "natural_fit": str,
-                                    "contextual_relevance": str,
-                                    "forced_rating": str
-                                }},
-                                "balance_evaluation": {{
-                                    "brand_vs_content": str,
-                                    "secondary_positioning": str,
-                                    "prominence_level": str
-                                }}
-                            }},
-                            "combined_insights": {{
-                                "key_integration_points": [
-                                    {{
-                                        "timestamp": float,
-                                        "technical_aspects": {{
-                                            "brand_presence": str,
-                                            "content_context": str
-                                        }},
-                                        "strategic_value": {{
-                                            "integration_quality": str,
-                                            "naturalness": str,
-                                            "user_value": str
-                                        }}
-                                    }}
-                                ],
-                                "overall_assessment": {{
-                                    "native_quality_score": int,  # 1-4 scale
-                                    "content_first_rating": str,
-                                    "key_strengths": [str],
-                                    "authenticity_level": str
-                                }}
-                            }}
-                        }}
-                    }}
+            3. CONTEXTUAL RELEVANCE (25% weight)
+               Focus: Does the brand fit the "Lived-in" environment?
+               - 90-100: Perfectly fits the setting (e.g., gym brand in a gym).
+               - 70-89: Logical fit, but feels slightly staged.
+               - 0-69: Out of place; studio environment.
 
-                    PROVIDE BOTH:
-                    1. Technical Analysis (from metadata):
-                        - Brand appearances
-                        - Visual prominence
-                        - Mention frequency
-                        - Content-to-brand ratio
-                    2. Integration Analysis (your evaluation):
-                        - Authenticity level
-                        - Natural vs. forced
-                        - Secondary positioning
-                        - User value prioritization
+            FINAL CALCULATION:
+            Overall Score = (Narrative × 0.40) + (Subtle × 0.35) + (Context × 0.25)
 
-                    Remember: Native brand context means the brand supports the content without dominating it - analyze both
-                    technical prominence and psychological integration quality.
-
-                    SCORING CONSIDERATIONS:
-                    1. Brand Position (40%):
-                        - Clearly secondary role
-                        - Content remains primary
-                        - Brand supports not dominates
-                        - Non-intrusive placement
-                    2. Natural Integration (30%):
-                        - Contextual relevance
-                        - Logical brand presence
-                        - Authentic mentions
-                        - Value-adding integration
-                    3. User Value (30%):
-                        - Content quality preserved
-                        - User experience prioritized
-                        - Value delivery focus
-                        - Entertainment/information first
-
-                    EVIDENCE EXAMPLES - NATIVE (HIGH SCORE):
-                        - Brand appears naturally in relevant context
-                        - Product used organically in story
-                        - Content remains entertaining/valuable
-                        - Brand supports rather than interrupts
-                        - Integration feels authentic and helpful
-
-                    EVIDENCE EXAMPLES - NON-NATIVE (LOW SCORE):
-                        - Frequent forced brand mentions
-                        - Overly prominent logo placements
-                        - Interrupted content flow for promotion
-                        - Brand dominates screen time
-                        - Promotional language overshadows content
-                """,
+            FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "evaluation": {{
+                    "integration_method": str, # e.g., "prop", "attire", "verbal"
+                    "primary_focus": str, # What is the main focus if not the brand?
+                    "narrative_score": int,
+                    "visual_subtle_score": int,
+                    "context_score": int,
+                    "weighted_overall": float
+                }},
+                "metrics": {{
+                    "brand_density": float,
+                    "is_brand_dominant": boolean # False is better for this feature
+                }}
+            }}""",
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -2583,176 +1193,40 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_personal_character_type",
-          name="Personal Character Type",
+          name="Everyday Persona Validation",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-                    The video ad uses everyday people, influencer, or content creator as the main character
-                    rather than actors, celebrities, or fictional characters.
-                """,
+            Determines if the video is led by a relatable 'everyday person' or creator. 
+            Returns negative if the character is a professional actor, celebrity, 
+            or fictional/animated entity.
+        """,
           prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate the type of main character
-                    featured in the video.
+            Evaluate if the primary character in this ad is an 'Everyday Person'.
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+            ### DEFINITION:
+            An 'Everyday Person' is an organic creator or real user who feels 
+            unpolished and relatable. This feature is FALSE if the person is a 
+            professional actor, a famous celebrity, or a fictional character.
 
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
-
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence (from metadata):
-                        - Person/face detection data
-                        - Speech patterns and style
-                        - Visual presentation cues
-                        - Production quality indicators
-                        - Setting and context markers
-                    2. Analyze Character Type:
-                        - Everyday person vs. celebrity
-                        - Authentic vs. polished presentation
-                        - Relatable vs. aspirational qualities
-                        - Amateur vs. professional delivery
-                        - Personal vs. scripted style
-                    3. Evaluate Authenticity Markers:
-                        - Natural speech patterns
-                        - Personal environment indicators
-                        - Genuine reactions/emotions
-                        - Real-life context elements
-                        - Unscripted quality indicators
-
-                    CHARACTER CATEGORIES TO IDENTIFY:
-                    1. Everyday People:
-                        - Regular individuals
-                        - Authentic presentation
-                        - Non-professional delivery
-                        - Real-life settings
-                        - Natural speech/behavior
-                    2. Influencers/Content Creators:
-                        - Social media personality style
-                        - Personal connection approach
-                        - Direct audience relationship
-                        - Content creator mannerisms
-                        - Platform-specific techniques
-                    3. Actors/Celebrities (Non-Qualifying):
-                        - Professional performance
-                        - High production polish
-                        - Celebrity recognition
-                        - Scripted delivery
-                        - Aspirational presentation
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # True if everyday person or influencer
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "main_character": {{
-                                    "appearance_markers": {{
-                                        "production_quality": str,
-                                        "setting_type": str,
-                                        "presentation_style": str,
-                                        "visual_indicators": [str]
-                                    }},
-                                    "speech_patterns": {{
-                                        "delivery_style": str,
-                                        "scripting_level": str,
-                                        "naturalness": str,
-                                        "linguistic_markers": [str]
-                                    }}
-                                }},
-                                "supporting_evidence": [
-                                    {{
-                                        "timestamp": float,
-                                        "element": str,
-                                        "character_type_indicator": str
-                                    }}
-                                ]
-                            }},
-                            "character_assessment": {{
-                                "identified_type": str,  # "everyday_person", "influencer", "celebrity", "actor", etc.
-                                "confidence_factors": [str],
-                                "authenticity_markers": {{
-                                    "natural_elements": [str],
-                                    "relatable_qualities": [str],
-                                    "genuine_indicators": [str]
-                                }},
-                                "counter_indicators": [str]
-                            }},
-                            "combined_insights": {{
-                                "character_authenticity": {{
-                                    "relatability_score": int,  # 1-4 scale
-                                    "authenticity_level": str,
-                                    "everyday_qualities": str
-                                }},
-                                "viewer_connection": {{
-                                    "identification_potential": str,
-                                    "parasocial_relationship": str,
-                                    "authenticity_impact": str
-                                }},
-                                "overall_assessment": {{
-                                    "everyday/influencer_qualities": float,  # 0-1 scale
-                                    "celebrity/actor_qualities": float,  # 0-1 scale
-                                    "primary_classification": str,
-                                    "key_determining_factors": [str]
-                                }}
-                            }}
-                        }}
-                    }}
-
-                    PROVIDE BOTH:
-                    1. Technical Analysis (from metadata):
-                        - Production quality indicators
-                        - Setting/environment assessment
-                        - Speech pattern analysis
-                        - Visual presentation cues
-                    2. Character Analysis (your evaluation):
-                        - Character type identification
-                        - Authenticity assessment
-                        - Relatability evaluation
-                        - Viewer connection potential
-
-                    Remember: VideoFeature detects if the main character is an everyday person or influencer/content
-                    creator rather than actor, celebrity, or fictional character.
-
-                    SCORING CONSIDERATIONS:
-                    1. Authenticity Markers (40%):
-                        - Natural speech patterns
-                        - Unscripted moments
-                        - Genuine reactions
-                        - Real environment
-                        - Personal elements
-                    2. Relatable Qualities (30%):
-                        - Everyday appearance
-                        - Accessible presentation
-                        - Non-aspirational qualities
-                        - Typical situations
-                        - Common experiences
-                    3. Content Creator Indicators (30%):
-                        - Platform-specific mannerisms
-                        - Creator techniques
-                        - Audience relationship cues
-                        - Personal brand elements
-                        - Community connection
-
-                    EVIDENCE EXAMPLES - QUALIFYING CHARACTERS:
-                        - Person speaks in unscripted, natural manner
-                        - Setting appears to be real home/environment
-                        - Delivery includes natural pauses/imperfections
-                        - Content creator uses platform-specific language
-                        - Person shares personal opinions/experiences
-                        - Individual displays authentic reactions
-
-                    EVIDENCE EXAMPLES - NON-QUALIFYING CHARACTERS:
-                        - Polished, professional delivery
-                        - Clearly scripted performance
-                        - Recognizable celebrity
-                        - Professional actor portrayal
-                        - Fictional or animated character
-                        - Highly aspirational presentation
-                """,
+            ### FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean, # TRUE if Everyday Person/Creator, FALSE otherwise
+                "confidence_score": float,
+                "feature_quality_score": float, # 1.0 (Highly Authentic) to 0.0 (Clearly Commercial)
+                "metrics": {{
+                    "is_everyday_person": boolean,
+                    "is_commercial_actor": boolean,
+                    "is_celebrity": boolean,
+                    "is_fictional_mascot": boolean
+                }},
+                "overall_assessment": {{
+                    "authenticity_rating": float, # 0.0 - 1.0 (How 'real' do they feel?)
+                    "sum": "Max 8 words identifying the person's vibe"
+                }}
+            }}
+        """,
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -2761,189 +1235,61 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_product_context",
-          name="Product Context",
+          name="Secondary Product Context",
           category=VideoFeatureCategory.SHORTS,
-          evaluation_criteria="""
-                    The product is positioned as a secondary element rather than the main focus of the ad,
-                    appearing in a natural and realistic context.
-                """,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
+          evaluation_criteria="""
+            Evaluates if the product is positioned as a secondary element rather than the main focus of the ad, 
+            appearing in a natural and realistic context.
+            """,
           prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate product positioning
-                    within the video content.
+            Act as a Product Stylist and Video Analyst. 
+            Evaluate: Is the product used naturally as a secondary element in a realistic context?
+    
+            VIDEO METADATA:
+            {metadata_summary}
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
+            SCORE ON THREE DIMENSIONS (0-100 each):
 
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
+            1. PRACTICAL UTILITY (45% weight)
+               Focus: Is the product being used for its actual purpose naturally?
+               - 90-100: Product usage is active but effortless (part of the background action).
+               - 70-89: Usage is clear but slightly emphasized for the camera.
+               - 0-69: Product is just "held" or static; trophy-like.
 
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence (from metadata):
-                        - Product appearances and timing
-                        - Screen position and prominence
-                        - Visual focus indicators
-                        - Mention frequency and context
-                        - Screen time allocation
-                    2. Analyze Content-Product Balance:
-                        - Story/content primacy vs. product focus
-                        - Natural integration vs. forced placement
-                        - Contextual relevance of product
-                        - Background vs. foreground positioning
-                        - Supporting vs. central role
-                    3. Evaluate User Experience:
-                        - Content value independence
-                        - Product intrusiveness level
-                        - Viewing experience quality
-                        - Information vs. promotion balance
-                        - Entertainment value preservation
+            2. ENVIRONMENTAL REALISM (30% weight)
+               Focus: Authenticity of the "Lived-in" space.
+               - 90-100: Messy, real-world, or non-studio environment.
+               - 70-89: Clean setting but clearly a home/office.
+               - 0-69: Sterile white background or over-lit studio.
 
-                    DUAL ANALYSIS APPROACH:
-                    1. Technical Pattern Recognition:
-                        a) Product Presence Markers:
-                            - Visual appearances
-                            - Verbal mentions
-                            - Text references
-                            - Focus indicators
-                            - Prominence measures
-                        b) Content Priority Indicators:
-                            - Story development
-                            - User value delivery
-                            - Entertainment elements
-                            - Information sharing
-                            - Experience quality
-                    2. Integration Psychology Analysis:
-                        a) Balance Assessment:
-                            - Content-to-product ratio
-                            - Focus distribution
-                            - Attention direction
-                            - Value hierarchy
-                            - Primary experience element
-                        b) Contextual Evaluation:
-                            - Natural fit quality
-                            - Realistic usage
-                            - Authentic integration
-                            - Scenario believability
-                            - Environmental appropriateness
+            3. VISUAL WEIGHT (25% weight)
+               Focus: Subject-to-Frame Ratio (SfR) balance.
+               - 90-100: Product occupies <20% of frame while in use.
+               - 70-89: Product occupies 20-35% of frame.
+               - 0-69: Product is dominant (>50% of frame).
 
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "product_instances": [
-                                    {{
-                                        "timestamp": float,
-                                        "type": "visual/verbal/text",
-                                        "prominence": "background/mid-ground/foreground",
-                                        "duration": float,
-                                        "screen_position": str
-                                    }}
-                                ],
-                                "content_emphasis": {{
-                                    "story_development": str,
-                                    "content_value": str,
-                                    "user_experience": str
-                                }},
-                                "balance_metrics": {{
-                                    "product_screen_time_ratio": float,
-                                    "mention_frequency": float,
-                                    "visual_prominence_score": float
-                                }}
-                            }},
-                            "integration_analysis": {{
-                                "secondary_positioning": {{
-                                    "background_quality": str,
-                                    "supporting_role": str,
-                                    "natural_presence": str
-                                }},
-                                "contextual_relevance": {{
-                                    "realistic_usage": str,
-                                    "scenario_authenticity": str,
-                                    "environmental_fit": str
-                                }}
-                            }},
-                            "combined_insights": {{
-                                "secondary_element_indicators": [
-                                    {{
-                                        "timestamp": float,
-                                        "context": str,
-                                        "technical_aspects": {{
-                                            "positioning": str,
-                                            "prominence": str
-                                        }},
-                                        "integration_quality": {{
-                                            "naturalness": str,
-                                            "relevance": str
-                                        }}
-                                    }}
-                                ],
-                                "overall_assessment": {{
-                                    "secondary_positioning_score": int,  # 1-4 scale
-                                    "content_primacy_level": str,
-                                    "integration_effectiveness": str,
-                                    "key_success_factors": [str]
-                                }}
-                            }}
-                        }}
-                    }}
+            FINAL CALCULATION:
+            Overall Score = (Utility × 0.45) + (Realism × 0.30) + (Weight × 0.25)
 
-                    PROVIDE BOTH:
-                    1. Technical Analysis (from metadata):
-                        - Product appearance timings
-                        - Screen positioning data
-                        - Visual prominence metrics
-                        - Mention frequency analysis
-                    2. Integration Analysis (your evaluation):
-                        - Content-product balance
-                        - Secondary positioning quality
-                        - Natural integration assessment
-                        - Context authenticity evaluation
-
-                    Remember: Secondary positioning means content/story takes precedence while product appears in a
-                    supporting, naturally integrated role.
-
-                    SCORING CONSIDERATIONS:
-                    1. Secondary Position (40%):
-                        - Product not center of attention
-                        - Brief/occasional appearances
-                        - Background/mid-ground placement
-                        - Content clearly prioritized
-                        - Supporting rather than starring role
-                    2. Natural Integration (30%):
-                        - Contextually relevant appearances
-                        - Realistic usage scenarios
-                        - Authentic environment
-                        - Logical presence
-                        - Non-disruptive placement
-
-                    3. Content Priority (30%):
-                        - Story/information leads
-                        - Independent value delivery
-                        - Entertainment priority
-                        - Experience quality maintained
-                        - User benefit focus
-
-                    EVIDENCE EXAMPLES - SECONDARY POSITION (HIGH SCORE):
-                        - Product appears naturally in environment
-                        - Content/story remains primary focus
-                        - Product integrates without disruption
-                        - Natural usage within narrative
-                        - Brief, contextual appearances
-                        - Supports rather than dominates content
-
-                    EVIDENCE EXAMPLES - PRIMARY FOCUS (LOW SCORE):
-                        - Product constantly center frame
-                        - Frequent close-ups of product
-                        - Story serves product demonstration
-                        - Extended focus on features/benefits
-                        - Content interrupted for product focus
-                        - Excessive feature highlighting
-                """,
+            FORMAT RESPONSE AS JSON:
+            {{
+                "detected": boolean,
+                "confidence_score": float,
+                "evaluation": {{
+                    "usage_type": str,
+                    "environment_type": str,
+                    "utility_score": int,
+                    "realism_score": int,
+                    "visual_weight_score": int,
+                    "weighted_overall": float
+                }},
+                "metrics": {{
+                    "avg_sfr_percentage": float,
+                    "is_product_secondary": boolean
+                }}
+            }}""",
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -2952,428 +1298,39 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_video_format",
-          name="Video Format",
+          name="Vertical Format Designed For Mobile",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    The ad is in a vertical format with portrait aspect ratio, specifically designed
-                    for mobile device viewing.
-                """,
+          evaluation_criteria=(
+              "Verifies 9:16 portrait ratio and detects"
+              " letterboxing/pillarboxing."
+          ),
           prompt_template="""
-                    Using both provided metadata AND your analytical capabilities, evaluate if the video uses vertical (portrait) format.
+            Verify if the video is optimized for mobile (9:16). 
+    
+            VIDEO METADATA:
+            {metadata_summary}
+            
+            Metrics:
+            - feature_quality_score: 1.0 (True 9:16), 0.5 (Letterboxed/Square), 0.0 (Horizontal).
 
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA PROVIDES:
-                    {metadata_summary}
-
-                    YOUR ANALYTICAL TASKS:
-                    1. Review Technical Evidence (from metadata):
-                        - Video dimensions/resolution
-                        - Aspect ratio indicators
-                        - Frame composition
-                        - Object positioning
-                        - Text placement
-                    2. Analyze Mobile Optimization:
-                        - Vertical orientation indicators
-                        - Mobile-friendly elements
-                        - Portrait-specific composition
-                        - Device-appropriate sizing
-                        - Vertical viewing adaptations
-                    3. Evaluate Format Effectiveness:
-                        - Content framing for vertical
-                        - Subject positioning
-                        - Mobile viewer experience
-                        - Intentional vertical design
-                        - Platform-specific optimization
-
-                    ANALYTICAL APPROACH:
-                    1. Technical Detection:
-                        a) Aspect Ratio Markers:
-                            - Height greater than width
-                            - Vertical rectangle shape
-                            - Portrait dimensions
-                            - Mobile-standard ratios (9:16, 4:5)
-                            - Vertical orientation signals
-                        b) Composition Indicators:
-                            - Vertical scene arrangement
-                            - Central vertical alignment
-                            - Portrait-style framing
-                            - Mobile-optimized spacing
-                            - Vertical viewing flow
-                    2. Mobile Design Analysis:
-                        a) Intentional Vertical Elements:
-                            - Platform-specific formatting
-                            - Mobile-native design choices
-                            - Vertical scrolling accommodation
-                            - Portrait viewing optimization
-                            - Thumb-zone considerations
-
-                        b) Viewing Experience Assessment:
-                            - Mobile viewing comfort
-                            - Vertical content flow
-                            - Portrait engagement patterns
-                            - Hand-held viewing adaptation
-                            - Platform alignment quality
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,
-                        "confidence_score": float,
-                        "evaluation": {{
-                            "technical_analysis": {{
-                                "aspect_ratio": {{
-                                    "height_to_width": float,
-                                    "orientation": "portrait/landscape/square",
-                                    "dimensions": {{
-                                        "width": int,
-                                        "height": int
-                                    }},
-                                    "standard_format": str  # "9:16", "4:5", etc.
-                                }},
-                                "composition_indicators": {{
-                                    "vertical_framing": str,
-                                    "object_alignment": str,
-                                    "text_positioning": str
-                                }}
-                            }},
-                            "mobile_design_assessment": {{
-                                "vertical_optimization": {{
-                                    "content_flow": str,
-                                    "viewing_experience": str,
-                                    "platform_compatibility": str
-                                }},
-                                "intentional_design": {{
-                                    "purpose_indicators": [str],
-                                    "mobile_native_elements": [str],
-                                    "adaptation_quality": str
-                                }}
-                            }},
-                            "combined_insights": {{
-                                "format_determination": {{
-                                    "primary_evidence": [str],
-                                    "technical_confidence": float,
-                                    "design_intention": str
-                                }},
-                                "overall_assessment": {{
-                                    "vertical_format_score": int,  # 1-4 scale
-                                    "mobile_optimization_level": str,
-                                    "platform_appropriateness": str,
-                                    "key_format_indicators": [str]
-                                }}
-                            }}
-                        }}
-                    }}
-
-                    PROVIDE BOTH:
-                    1. Technical Analysis (from metadata):
-                        - Aspect ratio calculation
-                        - Dimensional assessment
-                        - Format classification
-                        - Composition evaluation
-                    2. Design Analysis (your evaluation):
-                        - Mobile optimization quality
-                        - Vertical design intentionality
-                        - Platform appropriateness
-                        - Viewing experience impact
-
-                    Remember: Vertical format is specifically designed for mobile viewing with height greater than width,
-                    typically using 9:16 or 4:5 aspect ratios.
-
-                    DETECTION REQUIREMENTS:
-                    1. Aspect Ratio Verification:
-                        - Height clearly greater than width
-                        - Portrait orientation
-                        - Mobile-standard dimensions
-                        - Vertical composition
-                    2. Intentional Design Evidence:
-                        - Purposeful vertical framing
-                        - Mobile-optimized elements
-                        - Platform-appropriate design
-                        - Vertical viewing flow
-
-                    STANDARD VERTICAL FORMATS:
-                        - 9:16 ratio (1080x1920, 720x1280)
-                        - 4:5 ratio (1080x1350)
-                        - Other portrait formats with height > width
-
-                    CONFIDENCE SCORING:
-                        - High (0.8-1.0): Clear vertical format with mobile-optimized design
-                        - Medium (0.5-0.7): Vertical orientation but less optimal for mobile
-                        - Low (0.2-0.4): Some vertical elements but not fully optimized
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="content_type_ad_style_creator",
-          name="Ad Style Analysis (Creator vs. Traditional)",  # Slightly more descriptive name
-          category=VideoFeatureCategory.SHORTS,
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    Distinguish whether the video's advertising approach primarily follows a creator/influencer pattern
-                    (personality-driven, authentic integration, direct audience connection) or a traditional brand advertisement format
-                    (brand-centric messaging, formal presentation, standardized commercial structure), irrespective of production quality.
-                    # Sharpened criteria focus
-                """,
-          prompt_template="""
-                    Analyze this video's advertising style to determine if it aligns more closely with Creator/Influencer
-                    style or Traditional Ad style. Focus on the core narrative approach, presenter's role, tone, and method
-                    of brand integration.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary} # e.g., Channel name, Video title, duration, view count
-
-                    STYLE INDICATORS TO EVALUATE:
-                    CREATOR/INFLUENCER STYLE HALLMARKS:
-                    1. Content Focus & Narrative:
-                        - Driven by personal experience, opinion, or storytelling (creator is central).
-                        - Direct, informal address to the audience (vlogging style, community language).
-                        - Often includes unscripted moments or authentic reactions.
-                        - Conversational, relatable, and personality-infused tone.
-                        - Leverages existing creator-audience relationship/trust.
-                    2. Role of Presenter & Authenticity:
-                        - Presenter acts as a trusted individual/peer sharing experience.
-                        - Emphasis on perceived genuineness and personal connection.
-                        - Environment often feels personal (home, studio setup) even if professional.
-                        - Mistakes or imperfections might be left in to enhance authenticity.
-                    3. Brand Integration Method:
-                        - Product presented as part of the creator's life/workflow/experience.
-                        - Feels like a recommendation or personal endorsement.
-                        - Discussion often includes subjective benefits or personal take.
-                        - Call-to-action may involve creator codes or affiliate links.
-                        - Integration aims to feel organic within the creator's usual content style.
-                    4. Production Style Nuances:
-                        - Can range from basic to high-end, but *serves the personal narrative*.
-                        - Editing might use vlog conventions (jump cuts, overlays relevant to personality).
-                        - Pacing often driven by the creator's speaking style.
-
-                    TRADITIONAL AD STYLE HALLMARKS:
-                    1. Content Focus & Narrative:
-                        - Brand or product is the primary subject or 'hero'.
-                        - Often follows a clear, persuasive script with marketing objectives.
-                        - Uses actors or carefully directed individuals representing consumers/experts.
-                        - Formal, polished, often aspirational or problem/solution focused tone.
-                        - Aims for broad appeal, often less personality-specific.
-                    2. Role of Presenter & Authenticity:
-                        - Presenter acts as a spokesperson or demonstrator for the brand.
-                        - Focus is on professional delivery and clarity of message.
-                        - Environment is typically a set, idealized location, or studio.
-                        - Emphasis on flawlessness and professional execution.
-                    3. Brand Integration Method:
-                        - Explicit showcasing of product features and benefits.
-                        - Uses standard marketing language, slogans, taglines.
-                        - Demonstrations are often idealized or highly controlled.
-                        - Call-to-action is typically direct (buy now, visit website).
-                        - The ad exists *solely* to promote the product/brand.
-                    4. Production Style Nuances:
-                        - Consistently high-polish, often cinematic or slick commercial look.
-                        - Editing is typically smooth, conventional, emphasizes clarity.
-                        - Pacing designed for maximum impact and message retention.
-
-                    COMPARATIVE EVALUATION (Weighing the Evidence): # Renamed and refocused evaluation
-                        1. Primary Focus: Is the core narrative about the creator's perspective/story, or about the brand/product's features and benefits?
-                        2. Tone & Delivery: Is the language primarily conversational, personal, and informal (Creator) or scripted, formal, and promotional (Traditional)?
-                        3. Audience Relationship: Does the video speak *to* an existing community/follower base (Creator) or broadcast *at* a general audience (Traditional)?
-                        4. Brand Placement Feel: Does the product integration feel like a natural part of the creator's content (Creator) or a distinct commercial message (Traditional)?
-                        5. Authenticity Signals: Are there elements aiming for perceived genuineness (personal anecdotes, less polish, direct interaction) even if production is high (Creator), or is the focus on idealized perfection (Traditional)?
-
-                    FORMAT RESPONSE AS JSON (Strictly adhere to this structure):
-                    {{
-                        "detected": boolean,  # TRUE if predominantly Creator style, FALSE if predominantly Traditional style
-                        "confidence_score": float, # Confidence in the classification (0.0 to 1.0)
-                        "content_type": "Creator Ad Style" if detected else "Traditional Ad Style", # Label based on 'detected'
-                        "evaluation": {{
-                            "content_analysis": {{
-                                "narrative_style": "Describe the primary narrative approach (e.g., 'Personal experience sharing', 'Product feature showcase')",
-                                "engagement_approach": "Describe how the audience is addressed (e.g., 'Direct informal address', 'Formal voiceover narration')",
-                                "messaging_tone": "Describe the overall tone (e.g., 'Conversational and enthusiastic', 'Professional and persuasive')",
-                                "authenticity_level": "Assess perceived authenticity (e.g., 'High - feels genuine', 'Moderate - polished but personal', 'Low - clearly scripted/staged')"
-                            }},
-                            "production_analysis": {{
-                                "technical_quality": "Describe overall production level (e.g., 'High-end cinematic', 'Professional vlog style', 'Mixed polish levels')",
-                                "visual_style": "Describe the look and feel (e.g., 'Naturalistic personal space', 'Idealized commercial set', 'Dynamic run-and-gun')",
-                                "audio_elements": "Note key audio characteristics (e.g., 'Clear conversational dialogue', 'Professional voiceover', 'Stock music dominant')",
-                                "editing_approach": "Describe editing style (e.g., 'Jump cuts common', 'Smooth seamless transitions', 'Fast-paced montage')"
-                            }},
-                            "style_markers": {{
-                                "creator_elements": ["List specific observed elements fitting Creator style (e.g., 'Used first-person story', 'Showed personal workspace', 'Offered discount code')"],
-                                "traditional_elements": ["List specific observed elements fitting Traditional style (e.g., 'Focused solely on product features', 'Used professional actors', 'Showcased idealized results')"],
-                                "distinguishing_features": ["Explain the key factors that differentiate this video, especially if mixed elements exist (e.g., 'High production but narrative remained personal', 'Tone shifted distinctly for ad segment')"]
-                            }},
-                            "evidence": {{
-                                "timestamps": [ # Provide specific examples
-                                    {{
-                                        "time": float, # Time in seconds (start of relevant segment)
-                                        "element": "Describe the specific visual or audio cue",
-                                        "style_type": "Creator or Traditional", # Which style does this cue support?
-                                        "description": "Briefly explain *why* this cue supports the style type"
-                                    }}
-                                    # Add more timestamped evidence points as needed
-                                ],
-                                "key_moments": ["Describe 1-3 moments that strongly exemplify the determined style"],
-                                "production_notes": ["Overall comments on how production choices reinforce the style (e.g., 'Editing pace matched conversational tone', 'Lighting created idealized product shots')"]
-                            }}
-                        }},
-                        "reasoning_summary": "Provide a concise (1-2 sentence) justification for the final classification, synthesizing the key evaluation points." # Added summary field
-                    }}
-
-                    IMPORTANT NOTES (Critical Considerations):
-                        1. High production value alone DOES NOT equal Traditional style. Focus on intent and narrative.
-                        2. Creator ads can be extremely well-produced while maintaining core authentic/personal elements.
-                        3. Prioritize the *overall feel*, *presenter's role*, and *narrative approach* over isolated technical aspects.
-                        4. Look for *signals of authenticity* (even subtle ones) in creator content, regardless of budget.
-                        5. Assess *how* production choices *serve the core message*: Is it enhancing a personal story or creating a brand showcase?
-                """,
-          extra_instructions=[],
-          evaluation_method=EvaluationMethod.LLMS,
-          evaluation_function="",
-          include_in_evaluation=True,
-          group_by=VideoSegment.FULL_VIDEO,
-      ),
-      VideoFeature(
-          id="content_type_ad_style",
-          name="Ad Style Analysis",
-          category="Content_Type",
-          sub_category=VideoFeatureSubCategory.NONE,
-          video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria="""
-                    "Analyze if content follows creator/influencer ad patterns or traditional ad format. "
-                    "Creator ads typically feature personal narrative, direct audience engagement, and authentic style "
-                    "even with high production value. Traditional ads follow standard commercial formats with "
-                    "formal presentation and brand-first messaging.
-                """,
-          prompt_template="""
-                    Analyze this video's advertising style and production approach.
-
-                    BRAND/PRODUCT CONTEXT:
-                    - Brand: {brand}
-                    - Product: {product}
-                    - Industry: {vertical}
-
-                    VIDEO METADATA:
-                    {metadata_summary}
-
-                    STYLE INDICATORS:
-
-                    CREATOR/INFLUENCER STYLE:
-                    1. Content Approach:
-                        - Personal narrative/experience sharing
-                        - Direct, informal audience engagement
-                        - Behind-the-scenes elements
-                        - Authentic, conversational tone
-                        - Community-focused messaging
-                    2. Production Elements:
-                        - Dynamic, energetic pacing
-                        - Mix of polished and casual moments
-                        - Natural location shooting
-                        - Personal workspace/environment
-                        - Authentic reaction shots
-                    3. Brand Integration:
-                        - Personal experience with product
-                        - Natural usage demonstrations
-                        - Honest feedback/reviews
-                        - Relatable scenarios
-                        - Organic product placement
-
-                    TRADITIONAL STYLE:
-                    1. Content Approach:
-                        - Brand-first messaging
-                        - Professional scripting
-                        - Formal presentation
-                        - Marketing-focused language
-                        - Product-centric focus
-                    2. Production Elements:
-                        - Consistent high polish
-                        - Studio-quality lighting
-                        - Professional staging
-                        - Commercial-grade effects
-                        - Perfect technical execution
-                    3. Brand Integration:
-                        - Formal product showcasing
-                        - Standard marketing messages
-                        - Professional demonstrations
-                        - Idealized scenarios
-                        - Strategic placement
-
-                    EVALUATE BOTH:
-                    1. Content Style:
-                        - Narrative approach
-                        - Speaking patterns
-                        - Audience engagement
-                        - Message delivery
-                        - Brand integration
-                    2. Production Quality:
-                        - Technical execution
-                        - Visual composition
-                        - Audio quality
-                        - Editing style
-                        - Overall polish
-                    3. Creator Authenticity:
-                        - Personal connection
-                        - Natural delivery
-                        - Genuine reactions
-                        - Real environment
-                        - Honest messaging
-
-                    FORMAT RESPONSE AS JSON:
-                    {{
-                        "detected": boolean,  # TRUE for Creator style, FALSE for Traditional
-                        "confidence_score": float,
-                        "content_type": "Creator Ad Style" if detected else "Traditional Ad Style",
-                        "evaluation": {{
-                            "content_analysis": {{
-                                "narrative_style": str,
-                                "engagement_approach": str,
-                                "messaging_tone": str,
-                                "authenticity_level": str
-                            }},
-                            "production_analysis": {{
-                                "technical_quality": str,
-                                "visual_style": str,
-                                "audio_elements": str,
-                                "editing_approach": str
-                            }},
-                            "style_markers": {{
-                                "creator_elements": [str],
-                                "traditional_elements": [str],
-                                "distinguishing_features": [str]
-                            }},
-                            "evidence": {{
-                                "timestamps": [
-                                    {{
-                                        "time": float,
-                                        "element": str,
-                                        "style_type": str,
-                                        "description": str
-                                    }}
-                                ],
-                                "key_moments": [str],
-                                "production_notes": [str]
-                            }}
-                        }}
-                    }}
-
-                    IMPORTANT NOTES:
-                        1. High production value alone doesn't indicate traditional style
-                        2. Creator ads can be well-produced while maintaining authenticity
-                        3. Consider overall approach and tone more than technical quality
-                        4. Look for authentic elements even in polished content
-                        5. Evaluate how production serves the content style
-                """,
+            JSON ONLY:
+            {{
+                "detected": bool,
+                "confidence_score": float,
+                "feature_quality_score": float, 
+                "metrics": {{
+                    "format": "9:16"|"1:1"|"16:9"|"mixed",
+                    "is_letterboxed": bool,
+                    "safe_zone_compliant": bool
+                }},
+                "overall_assessment": {{
+                    "mobile_native_score": float,
+                    "sum": "Max 10 words summary"
+                }}
+            }}
+        """,
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
