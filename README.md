@@ -16,7 +16,7 @@ limitations under the License.
 
 ABCDs Detector is NOT an official Google product.
 
-## June, 2025 Update: Enhanced Capabilities and Flexibility
+## May, 2026 Update: Enhanced Capabilities and Flexibility
 
 We're excited to announce major enhancements to the ABCDs Detector, significantly expanding its capabilities and offering greater flexibility in how you analyze your video creatives.
 
@@ -26,26 +26,46 @@ We're excited to announce major enhancements to the ABCDs Detector, significantl
     *  Introducing SHORTS evaluation, specifically tailored for YouTube Shorts. Advanced research has identified the top 20 creative attributes that explain video performance variation, enabling more efficient creative optimization.
 
     **Top 20 YouTube Shorts Evaluation Features:**
-    1. **Tight Framing & Visual Dominance** - Quantifies spatial dominance of the primary subject (≥60% of frame).
-    2. **Human Voice Presence** - Quantifies the presence, duration, and quality of human speech.
-    3. **Direct to Camera** - Quantifies the duration and intensity of direct eye contact with the lens.
-    4. **Supers & Text-Audio Synchronicity** - Quantifies presence and synchronization of text overlays with spoken audio.
-    5. **Product Close-Up** - Quantifies segments where the product occupies at least 30% of the frame.
-    6. **Product Extreme Close-Up** - Quantifies segments where the product occupies 60% or more of the frame.
-    7. **Product Context & Usage Quality** - Evaluates physical interaction and authentic utility demonstration.
-    8. **Casual Language** - Quantifies script informality, everyday language, and conversational filler.
-    9. **Humor & Comedic Timing** - Detects attempts at humor, physical comedy, satire, or comedic timing.
-    10. **Character-Driven** - Evaluates a relatable character whose journey resonates with the audience.
-    11. **Call to Action (Audio)** - Detects spoken instructions that direct the viewer to take action.
-    12. **Special Offer (Speech)** - Detects audio announcements of a special offer, discount, or deal.
-    13. **Production Style** - Quantifies 'Lo-Fi' aesthetics and User Generated Content (UGC) authenticity.
-    14. **SFV Native Adaptation** - Measures how effectively the video mimics organic social content.
-    15. **Emoji Usage** - Detects intentional, creative use of emojis, stickers, and animated effects.
-    16. **Direct to Camera Character Talk** - Evaluates the intimacy and continuity of direct lens address.
-    17. **Brand Secondary Element** - Evaluates if the brand feels like a natural, secondary part of the environment.
-    18. **Everyday Persona Validation** - Verifies the video is led by an authentic, relatable 'everyday person'.
-    19. **Secondary Product Context** - Evaluates if the product appears naturally as a secondary element.
-    20. **Vertical Format Designed For Mobile** - Verifies 9:16 portrait optimization and detects letter/pillarboxing.
+    * **Tight Framing & Visual Dominance** - Quantifies spatial dominance of the primary subject (≥60% of frame).
+    * **Human Voice Presence** - Quantifies the presence, duration, and quality of human speech.
+    * **Direct to Camera** - Quantifies the duration and intensity of direct eye contact with the lens.
+    * **Supers & Text-Audio Synchronicity** - Quantifies presence and synchronization of text overlays with spoken audio.
+    * **Product Close-Up** - Quantifies segments where the product occupies at least 30% of the frame.
+    * **Product Extreme Close-Up** - Quantifies segments where the product occupies 60% or more of the frame.
+    * **Product Context & Usage Quality** - Evaluates physical interaction and authentic utility demonstration.
+    * **Casual Language** - Quantifies script informality, everyday language, and conversational filler.
+    * **Humor & Comedic Timing** - Detects attempts at humor, physical comedy, satire, or comedic timing.
+    * **Character-Driven** - Evaluates a relatable character whose journey resonates with the audience.
+    * **Call to Action (Audio)** - Detects spoken instructions that direct the viewer to take action.
+    * **Special Offer (Speech)** - Detects audio announcements of a special offer, discount, or deal.
+    * **Production Style** - Quantifies 'Lo-Fi' aesthetics and User Generated Content (UGC) authenticity.
+    * **SFV Native Adaptation** - Measures how effectively the video mimics organic social content.
+    * **Emoji Usage** - Detects intentional, creative use of emojis, stickers, and animated effects.
+    * **Direct to Camera Character Talk** - Evaluates the intimacy and continuity of direct lens address.
+    * **Brand Secondary Element** - Evaluates if the brand feels like a natural, secondary part of the environment.
+    * **Everyday Persona Validation** - Verifies the video is led by an authentic, relatable 'everyday person'.
+    * **Secondary Product Context** - Evaluates if the product appears naturally as a secondary element.
+    * **Vertical Format Designed For Mobile** - Verifies 9:16 portrait optimization and detects letter/pillarboxing.
+
+    **BigQuery Output Schema for Shorts:**
+    The Shorts evaluation stores a comprehensive set of columns in BigQuery for each feature evaluated:
+    * **Video & Brand Info:** `execution_timestamp`, `brand_name`, `video_id`, `video_name`, `video_uri`.
+    * **Feature Definition:** `feature_id`, `feature_name`, `feature_category`, `feature_sub_category`, `feature_video_segment`, `feature_evaluation_criteria`.
+    * **Standard Evaluation:**
+        * `detected` (Boolean): Did the video pass the specific ABCD rule?
+        * `confidence_score` (Float): How certain the LLM is about the detection (0.0 to 1.0).
+        * `detected_evidence` (String): Description of the visual/audio cues and full timestamps supporting the decision.
+        * `recommended_actions` (String): Actionable next steps for the editor to improve the video.
+        * `strengths_to_keep` (String): What the editor did right and shouldn't change.
+    * **Advanced Shorts Metrics:** 
+        * `first_appearance_timestamp` (String): When did this feature first appear in the video? (Format MM:SS).
+        * `feature_density_score` (Float): Percentage of video duration where the feature is present.
+        * `feature_quality_score` (Float): How well was the feature executed? (0.0 to 1.0).
+        * `feature_specifics` (JSON): The nested metrics and full temporal arrays for deep-dives (e.g., readability scores, vocal clarity).
+    * **Context Info:** `brand_metadata` (JSON string of brand details), `config` (JSON string of execution config).
+
+
+
 
 2.  **Direct YouTube URL Support:**
     *   You can now directly provide **YouTube URLs** for evaluation. This is applicable for public YouTube videos or videos from channels where the user is the owner.
