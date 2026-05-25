@@ -41,6 +41,3 @@ Thumbs.db
 
 # Git
 .git
-
-.venv/
-**/__pycache__/
