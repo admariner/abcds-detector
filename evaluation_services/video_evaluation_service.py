@@ -137,17 +137,37 @@ class VideoEvaluationService:
             )
         )
         if feature:
-          feature_evaluations.append(
-              models.FeatureEvaluation(
-                  feature=feature,
-                  detected=evaluated_feature.get("detected"),
-                  confidence_score=evaluated_feature.get("confidence_score"),
-                  rationale=evaluated_feature.get("rationale"),
-                  evidence=evaluated_feature.get("evidence"),
-                  strengths=evaluated_feature.get("strengths"),
-                  weaknesses=evaluated_feature.get("weaknesses"),
-              )
-          )
+          if features_category == models.VideoFeatureCategory.SHORTS:
+            feature_evaluations.append(
+                models.ShortsFeatureEvaluation(
+                    feature=feature,
+                    detected=evaluated_feature.get("detected"),
+                    confidence_score=evaluated_feature.get("confidence_score") or 0.0,
+                    rationale="",
+                    evidence=evaluated_feature.get("detected_evidence") or "",
+                    strengths=evaluated_feature.get("strengths_to_keep") or "",
+                    weaknesses=evaluated_feature.get("recommended_actions") or "",
+                    detected_evidence=evaluated_feature.get("detected_evidence"),
+                    recommended_actions=evaluated_feature.get("recommended_actions"),
+                    strengths_to_keep=evaluated_feature.get("strengths_to_keep"),
+                    first_appearance_timestamp=evaluated_feature.get("first_appearance_timestamp") if evaluated_feature.get("detected") else None,
+                    feature_density_score=evaluated_feature.get("feature_density_score"),
+                    feature_quality_score=evaluated_feature.get("feature_quality_score"),
+                    feature_specifics=evaluated_feature.get("feature_specifics"),
+                )
+            )
+          else:
+            feature_evaluations.append(
+                models.FeatureEvaluation(
+                    feature=feature,
+                    detected=evaluated_feature.get("detected"),
+                    confidence_score=evaluated_feature.get("confidence_score"),
+                    rationale=evaluated_feature.get("rationale"),
+                    evidence=evaluated_feature.get("evidence"),
+                    strengths=evaluated_feature.get("strengths"),
+                    weaknesses=evaluated_feature.get("weaknesses"),
+                )
+            )
         else:
           logging.warning(
               "Feature %s not found. Feature was not added to"

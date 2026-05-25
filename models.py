@@ -77,6 +77,19 @@ class FeatureEvaluation:
 
 
 @dataclass
+class ShortsFeatureEvaluation(FeatureEvaluation):
+  """Class that represents the evaluation of a Shorts feature with new scores."""
+
+  detected_evidence: str | None = None
+  recommended_actions: str | None = None
+  strengths_to_keep: str | None = None
+  first_appearance_timestamp: float | None = None
+  feature_density_score: float | None = None
+  feature_quality_score: float | None = None
+  feature_specifics: dict | None = None
+
+
+@dataclass
 class VideoAssessment:
   """Class that represents the evaluation of a feature"""
 
@@ -182,6 +195,128 @@ VIDEO_RESPONSE_SCHEMA = {
             "evidence",
             "strengths",
             "weaknesses",
+        ],
+    },
+}
+
+
+SHORTS_RESPONSE_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+            },
+            "name": {
+                "type": "string",
+            },
+            "category": {
+                "type": "string",
+            },
+            "sub_category": {
+                "type": "string",
+            },
+            "video_segment": {
+                "type": "string",
+            },
+            "evaluation_criteria": {
+                "type": "string",
+            },
+            "detected": {
+                "type": "boolean",
+            },
+            "confidence_score": {
+                "type": "number",
+            },
+            "detected_evidence": {
+                "type": "string",
+            },
+            "recommended_actions": {
+                "type": "string",
+            },
+            "strengths_to_keep": {
+                "type": "string",
+            },
+            "first_appearance_timestamp": {
+                "type": "string",
+            },
+            "feature_density_score": {
+                "type": "number",
+            },
+            "feature_quality_score": {
+                "type": "number",
+            },
+            "feature_specifics": {
+                "type": "object",
+                "properties": {
+                    "readability_score": {
+                        "type": "number",
+                    },
+                    "synchronicity_score": {
+                        "type": "number",
+                    },
+                    "quality_bonus_score": {
+                        "type": "number",
+                    },
+                    "text_coverage_ratio": {
+                        "type": "number",
+                    },
+                    "primary_supers_type": {
+                        "type": "string",
+                    },
+                    "peak_sfr_percentage": {
+                        "type": "number",
+                    },
+                    "primary_subject_class": {
+                        "type": "string",
+                    },
+                    "framing_cadence": {
+                        "type": "string",
+                    },
+                    "vocal_clarity_score": {
+                        "type": "number",
+                    },
+                    "primary_voice_type": {
+                        "type": "string",
+                    },
+                    "speech_cadence": {
+                        "type": "string",
+                    },
+                    "background_noise_level": {
+                        "type": "string",
+                    },
+                    "camera_stability": {
+                        "type": "string",
+                    },
+                    "lighting_type": {
+                        "type": "string",
+                    },
+                    "equipment_look": {
+                        "type": "string",
+                    },
+                    "environment_realism": {
+                        "type": "string",
+                    },
+                }
+            },
+        },
+        "required": [
+            "id",
+            "name",
+            "category",
+            "sub_category",
+            "video_segment",
+            "evaluation_criteria",
+            "detected",
+            "confidence_score",
+            "detected_evidence",
+            "recommended_actions",
+            "strengths_to_keep",
+            "first_appearance_timestamp",
+            "feature_density_score",
+            "feature_quality_score",
+            "feature_specifics",
         ],
     },
 }

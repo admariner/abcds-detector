@@ -20,7 +20,6 @@
 
 """Module with the supported ABCD feature configurations for Shorts"""
 
-
 from models import (
     VideoFeature,
     VideoSegment,
@@ -28,6 +27,42 @@ from models import (
     VideoFeatureCategory,
     VideoFeatureSubCategory,
 )
+
+BASE_RESPONSE_FORMAT = """
+
+        ### 3. GENERAL GUIDANCE FOR FIELDS:
+        - Shorts Benchmarking: 
+            * All evaluations must be tailored specifically to Short-Form Video (Shorts) content
+            * Use the creative criteria and best practices of successful short-form video advertisers as your benchmark
+        - confidence_score: 
+            * This score must reflect your confidence in your final detected decision (whether True or False). 
+            * A high score means you are certain about your answer
+            * A low score means the video evidence is ambiguous or hard to evaluate.
+        - detected_evidence: 
+            * Always include specific timestamps and visual/audible cues to support your claims.
+        - recommended_actions: 
+            * Must be a specific, concrete, and actionable next step for the editor to improve this feature. Avoid generic advice. 
+            * You MUST provide a specific recommendation if the feature is missing or if the feature_quality_score is low (<= 0.4).
+            * If the feature is fully optimized and no improvement is needed, return "Great job! This feature is already fully optimized." 
+
+        ### 4. FORMAT RESPONSE AS JSON:
+
+        **OUTPUT STRUCTURE:**
+        (Note: The comments starting with # are for your guidance only. Do not include them in your final JSON response.)
+        {{
+            "detected": boolean,  # True if feature is present, False otherwise; as calculated in EVALUATION LOGIC
+            "confidence_score": float,  # 0.0 to 1.0; confidence in decision; as calculated in EVALUATION LOGIC
+            "detected_evidence": string,  # Description of cues and timestamps
+            "recommended_actions": string,  # Actionable next step for the editor if feature is missing or quality is low
+            "strengths_to_keep": string,  # What the editor did right and should not change
+            "first_appearance_timestamp": string,  # When this feature first appeared, format MM:SS
+            "feature_density_score": float,  # 0.0 to 1.0; represents the percentage of video duration the feature is present; as calculated in EVALUATION LOGIC
+            "feature_quality_score": float,  # 0.0 to 1.0; represents the creative quality of the execution; as calculated in EVALUATION LOGIC
+            "feature_specifics": {{
+                {specifics} 
+            }}
+        }}
+"""
 
 
 def get_shorts_feature_configs() -> list[VideoFeature]:
@@ -61,58 +96,32 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
             
                 VIDEO METADATA: {metadata_summary}
 
-                ### 1. QUANTITATIVE HEURISTICS:
-                - **Extreme Close-Up (ECU):** Subject fills >80% of frame.
-                - **Close-Up (CU):** Subject fills 60% - 80% of frame.
-                - **Medium Shot (MS):** Subject fills 30% - 59% of frame.
-                - **Wide/Long Shot (LS):** Subject fills <30% of frame.
+                ### 1. SHOT CLASSIFICATION (for reference):
+                    - Extreme Close-Up (ECU): Subject fills >80% of frame.
+                    - Close-Up (CU): Subject fills 60%-80% of frame.
+                    - Medium Shot (MS): Subject fills 30%-59% of frame.
+                    - Wide/Long Shot (LS): Subject fills <30% of frame.
 
-                ### 2. DENSITY & QUALITY LOGIC:
-                - **Density Score:** (Total duration of all CU and ECU shots) / (Total video duration).
-                Represented as density_score in the JSON.
-                - **Feature Quality Score:** Map the density_score to the following scale:
-                    * 0.9-1.0: Density > 70% (Dominant)
-                    * 0.7-0.8: Density 40-70% (Strong)
-                    * 0.4-0.6: Density 20-40% (Balanced)
-                    * 0.1-0.3: Density < 20% (Incidental)
-
-                ### FORMAT RESPONSE AS JSON:
-                {{
-                    "detected": boolean,
-                    "confidence_score": float, # Certainty of visual detection accuracy
-                    "feature_quality_score": float, # The 0.0-1.0 score based on the Density Scale
-                    "metrics": {{
-                        "density_score": float, # MANDATORY: Total tight-frame duration / Total duration
-                        "peak_sfr_percentage": float, # Highest Subject-to-Frame ratio observed
-                        "primary_subject_class": str, # "Product", "Human_Face", "Text", "Abstract"
-                        "framing_cadence": "Static" | "Fast-Cutting" | "Zoom-In-Progressive"
-                    }},
-                    "spatial_analysis": {{
-                        "average_negative_space_ratio": float, # 1.0 - average SfR
-                        "edge_collision": boolean, # Subject bleeds off the edges
-                        "occlusion_level": "None" | "Partial" | "Heavy"
-                    }},
-                    "temporal_segments": [
-                        {{
-                            "start": float,
-                            "end": float,
-                            "shot_type": "ECU" | "CU",
-                            "subject_dominance_score": float,
-                            "description": str
-                        }}
-                    ],
-                    "overall_assessment": {{
-                        "visual_impact_score": float, # Effectiveness for mobile viewing
-                        "is_hook_tightly_framed": boolean, # Evaluates the first 3 seconds
-                        "summary": "Concise technical summary of framing strategy"
-                    }}
-                }}
-
-                ### EVALUATION LOGIC:
-                - **The Hook:** If the first 3 seconds are tight-framed, increase the visual_impact_score.
-                - **Negative Space:** Ignore solid color backgrounds (graphics); focus on the subject's physical bounding box.
-                - **Calculation:** Ensure the density_score is a precise float based on the temporal_segments sum.
-            """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the subject fills the frame
+                       - how unambiguous the shot type is. Otherwise set to False.
+                    2. Set confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total CU+ECU duration) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on the "Goldilocks Zone" of density (ideal is 30%-60%).
+                        - Give a bonus if the first 3 seconds (The Hook) contain tight framing.
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and shot durations.
+        """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "peak_sfr_percentage": float (Highest Subject-to-Frame Ratio observed in the video, e.g., 0.85),
+                        "primary_subject_class": string (Category of the main subject, e.g., Human, Product, Text),
+                        "framing_cadence": string (Rhythm of shot changes, e.g., Rapid cuts, Static, Smooth transitions)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -126,64 +135,46 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.ATTRACT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Quantifies the presence, duration, and quality of human speech. 
-            Voice includes Voice-Overs (VO), direct-to-camera dialogue, or background 
-            narration. The metric measures 'Vocal Density' (percentage of video containing 
-            speech) and assesses the clarity and role of the speaker.
-        """,
+                Quantifies the presence, duration, and quality of human speech. 
+                Voice includes Voice-Overs (VO), direct-to-camera dialogue, or background 
+                narration. The metric measures 'Vocal Density' (percentage of video containing 
+                speech) and assesses the clarity and role of the speaker.
+            """,
           prompt_template="""
-            Act as a professional Cinematographer and Video Analyst. Your goal is to analyze the audio track of this video specifically for human vocal presence.
+                Act as a professional Cinematographer and Video Analyst. 
+                Your goal is to analyze the audio track of this video specifically for human vocal presence.
 
-            VIDEO METADATA: {metadata_summary}
+                VIDEO METADATA: {metadata_summary}
 
-            ### 1. METRIC DEFINITIONS:
-            - **Density Score:** (Total duration of audible human speech) / (Total video duration). It is referred to as density_score in the JSON file.
-            *Example: If there is a 2s intro greeting and a 3s closing call-to-action in a 10s video, Density Score is 0.5.*
-            - **Vocal Clarity:** The ease with which the voice is understood (0.0 - 1.0). High score = studio quality/clear; Low score = muffled, heavy background noise, or distorted.
+                ### 1. DEFINITIONS (for reference):
+                    - Voice Over (VO): Narrative voice added in post-production.
+                    - Dialogue: On-camera person speaking.
+                    - Ambient Speech: Overheard background talking.
+                    - Synthetic/AI Voice: Clear AI-generated narration (text-to-speech).
+                    - Vocal Clarity: The ease with which the voice is understood (0.0 - 1.0). 
+                      High score = studio quality/clear; Low score = muffled, heavy background noise.
 
-            ### 2. VOCAL CATEGORIES:
-            - **Voice Over (VO):** Narrative voice added in post-production.
-            - **Dialogue:** On-camera person speaking.
-            - **Ambient Speech:** Overheard background talking.
-            - **Synthetic/AI Voice:** Clear AI-generated narration (text-to-speech).
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean, 
-                "confidence_score": float, # Certainty that the detected audio is a human voice
-                "metrics": {{
-                    "density_score": float, # Total speech duration / Total video duration
-                    "vocal_clarity_score": float, # 0.0 to 1.0 based on signal-to-noise ratio
-                    "primary_voice_type": "Voice_Over" | "Dialogue" | "AI_Synthetic" | "Mixed",
-                    "speech_cadence": "Constant" | "Intermittent" | "Rapid" | "Slow"
-                }},
-                "audio_analysis": {{
-                    "background_noise_level": "Low" | "Medium" | "High",
-                    "music_overlap_interference": boolean, # Does background music drown out the voice?
-                    "speaker_gender_estimate": "Male" | "Female" | "Multiple" | "N/A"
-                }},
-                "temporal_segments": [
-                    {{
-                        "start": float,
-                        "end": float,
-                        "voice_role": "Narration" | "Hook" | "CTA" | "Ambient",
-                        "clarity_rating": float,
-                        "description": str # e.g., "Creator introduces product features"
-                    }}
-                ],
-                "overall_assessment": {{
-                    "vocal_impact_score": float, # How much does the voice drive the narrative?
-                    "is_hook_voiced": boolean, # Does speech start within the first 1.5 seconds?
-                    "summary": "Technical summary of audio/vocal strategy"
-                }}
-            }}
-
-            ### EVALUATION STEPS:
-            1. Identify all time stamps where a human (or AI) voice is audible.
-            2. Calculate the **density_score** (Total Speech Time / Total Duration).
-            3. Evaluate the **vocal_clarity_score**—reduce this if background music or noise makes speech hard to follow.
-            4. Determine if the "Hook" (0:00-0:02) contains speech, as this is a high-retention signal.
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the voice is audible
+                       - how identifiable it is. Otherwise set to False.
+                    2. Set confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration of audible human speech) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Vocal Clarity (0.0 to 1.0).
+                        - Give a bonus (+0.1) if the speech starts in the first 3 seconds (The Hook).
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and durations.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "vocal_clarity_score": float (Clarity of speech from 0.0 to 1.0, where 1.0 is studio quality),
+                        "primary_voice_type": string (Type of voice, e.g., Voice Over, Dialogue, Ambient, Synthetic),
+                        "speech_cadence": string (Pace of speaking, e.g., Fast, Measured, Conversational),
+                        "background_noise_level": string (Level of background noise, e.g., Low, Moderate, High)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -203,61 +194,38 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
                 (e.g., face-to-face address).
             """,
           prompt_template="""
-                Act as a professional Cinematographer and Video Analyst. Your goal is to 
-                analyze the video for instances where a person looks directly into the camera lens 
-                to address the viewer.
+                Act as a professional Cinematographer and Video Analyst. 
+                Your goal is to analyze the video for instances where a person looks 
+                directly into the camera lens to address the viewer.
 
                 VIDEO METADATA: {metadata_summary}
 
-                ### 1. METRIC DEFINITIONS:
-                - **Density Score:** (Total duration of direct eye contact / address) / (Total video duration). 
-                Represented as feature_quality_score in the JSON.
-                - **Eye Contact Intensity:** A measure of how consistently the subject maintains 
-                gaze without looking away at scripts or monitors (0.0 - 1.0).
+                ### 1. ADDRESS MODES (for reference):
+                    - Direct Address: Subject is looking into the lens and speaking.
+                    - Silent Gaze: Subject maintains eye contact without speaking.
+                    - Glance: Brief, intermittent eye contact (less than 0.5s).
+                    - Off-Camera: Subject is looking at a secondary point, not the viewer.
 
-                ### 2. ADDRESS MODES:
-                - **Direct Address:** Subject is looking into the lens and speaking.
-                - **Silent Gaze:** Subject maintains eye contact without speaking (e.g., reacting to a sound).
-                - **Glance:** Brief, intermittent eye contact (less than 0.5s).
-                - **Off-Camera:** Subject is looking at a secondary point (3/4 profile), not the viewer.
-
-                ### FORMAT RESPONSE AS JSON:
-                {{
-                    "detected": boolean, 
-                    "confidence_score": float, # Certainty that gaze is directed at the lens
-                    "feature_quality_score": float, # Total direct address duration / Total duration
-                    "metrics": {{
-                        "eye_contact_intensity": float, # 0.0 to 1.0 (steadiness of gaze)
-                        "subject_distance": "Close-Up" | "Medium" | "Full-Body",
-                        "address_style": "Personal/Intimate" | "Presentational" | "Accidental"
-                    }},
-                    "visual_engagement_analysis": {{
-                        "facial_visibility": "Full" | "Partial" | "Occluded",
-                        "eye_level_alignment": "Eye-Level" | "High-Angle" | "Low-Angle",
-                        "emotional_delivery": str # e.g., "High-energy", "Authentic", "Stoic"
-                    }},
-                    "temporal_segments": [
-                        {{
-                            "start": float,
-                            "end": float,
-                            "gaze_type": "Direct_Address" | "Silent_Gaze" | "Intermittent",
-                            "eye_contact_strength": float,
-                            "description": str # e.g., "Speaker addresses viewer during the hook"
-                        }}
-                    ],
-                    "overall_assessment": {{
-                        "parasocial_score": float, # How effectively does the subject "connect" with the viewer?
-                        "is_hook_direct": boolean, # Does direct eye contact occur in the first 1.5 seconds?
-                        "summary": "Technical summary of direct address strategy"
-                    }}
-                }}
-
-                ### EVALUATION STEPS:
-                1. Identify all segments where the subject's pupils are directed at the camera lens.
-                2. Calculate the **feature_quality_score** by dividing direct address time by total duration.
-                3. Assess **eye_contact_intensity**—lower this if the subject is clearly reading a teleprompter or looking at themselves on the phone screen rather than the lens.
-                4. Check the "Hook" (0:00-0:02); direct address at the start is a major retention driver.
-            """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the subject's pupils are directed at the camera lens. Otherwise set to False.
+                    2. Set confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration of direct eye contact / address) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Eye Contact Intensity (0.0 to 1.0).
+                        - Give a bonus (+0.1) if direct address starts in the first 2 seconds (Hook).
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and durations.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "eye_contact_intensity": float (Strength of gaze from 0.0 to 1.0),
+                        "subject_distance": string (e.g., Extreme Close-Up, Close-Up, Medium),
+                        "address_style": string (e.g., Direct Address, Silent Gaze, Glance),
+                        "emotional_delivery": string (e.g., Enthusiastic, Serious, Casual)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -271,66 +239,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.ATTRACT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-        Quantifies the presence, accuracy, and synchronization of text overlays (supers) 
-        with the spoken audio. This measures 'Text Density' and the 'Synchronicity Score' 
-        to determine how effectively the visual text reinforces the spoken message.
-    """,
+                Quantifies the presence, accuracy, and synchronization of text overlays (supers) 
+                with the spoken audio. This measures 'Text Density' and the 'Synchronicity Score' 
+                to determine how effectively the visual text reinforces the spoken message.
+            """,
           prompt_template="""
-        Act as a professional Cinematographer and Video Analyst. Your goal is to 
-        Analyze the video for SUPERS (text overlays) and their relationship to the audio.
-        
-        VIDEO METADATA: {metadata_summary}
+                Act as a professional Cinematographer and Video Analyst. Your goal is to 
+                Analyze the video for SUPERS (text overlays) and their relationship to the audio.
+                
+                VIDEO METADATA: {metadata_summary}
 
-        ### 1. METRIC DEFINITIONS:
-        - **Density Score:** (Total duration where text overlays are visible) / (Total video duration).
-          Represented as feature_quality_score in the JSON.
-        - **Synchronicity Score:** (0.0 - 1.0) measure of how well text timing matches spoken words. 
-          1.0 = frame-perfect captions; 0.5 = static text roughly related; 0.0 = no relation.
+                ### 1. SUPERS CATEGORIES (for reference):
+                    - Dynamic Captions: Word-by-word or phrase-by-phrase synced text.
+                    - Static Callouts: Persistent text (e.g., "50% OFF" or "Product Name").
+                    - Kinetic Typography: Stylized, moving text used for emphasis.
+                    - Headlines: Large top/bottom text bars that stay throughout the video.
 
-        ### 2. SUPERS CATEGORIES:
-        - **Dynamic Captions:** Word-by-word or phrase-by-phrase synced text.
-        - **Static Callouts:** Persistent text (e.g., "50% OFF" or "Product Name").
-        - **Kinetic Typography:** Stylized, moving text used for emphasis.
-        - **Headlines:** Large top/bottom text bars that stay throughout the video.
-
-        ### FORMAT RESPONSE AS JSON:
-        {{
-            "detected": boolean,
-            "confidence_score": float, # Certainty of text detection
-            "feature_quality_score": float, # 0.0-1.0 Time text is visible / Total duration
-            "metrics": {{
-                "synchronicity_score": float, # Match between audio and text timing
-                "text_coverage_ratio": float, # Percentage of frame area occupied by text
-                "primary_supers_type": "Dynamic_Captions" | "Static_Callouts" | "Headlines" | "Mixed"
-            }},
-            "visual_analysis": {{
-                "readability_score": float, # Contrast and font clarity (0.0 - 1.0)
-                "is_mobile_safe": boolean, # Is text clear of UI elements (likes/captions)?
-                "font_style": "Minimal" | "Bold/Aggressive" | "Stylized/Brand"
-            }},
-            "temporal_segments": [
-                {{
-                    "start": float,
-                    "end": float,
-                    "text_content": str,
-                    "matches_audio": boolean,
-                    "style": "Caption" | "Emphasis" | "CTA"
-                }}
-            ],
-            "overall_assessment": {{
-                "narrative_reinforcement_score": float, # How well text aids understanding
-                "is_hook_text_present": boolean, # Does text appear in the first 1.5 seconds?
-                "summary": "Technical summary of text overlay strategy"
-            }}
-        }}
-
-        ### EVALUATION STEPS:
-        1. Identify all segments where text is overlaid on the video.
-        2. Compare the text content against the audio track for verbatim or supportive matching.
-        3. Calculate the **feature_quality_score** based on text visibility duration.
-        4. Assess the **synchronicity_score**—lower this if text lingers too long or appears after the audio has passed.
-        5. Verify if text is in the "Mobile Safe Zone" (central area, not blocked by platform UI).
-    """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the text is legible
+                       - how identifiable it is as a creative overlay (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration where text overlays are visible) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Formula: (readability_score + synchronicity_score) / 2
+                        - Bonus_score: Add +0.1 if the text is in the "Mobile Safe Zone".
+                        - Cap the final score at 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and text content.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "readability_score": float (as used in the feature_quality_score formula),
+                        "synchronicity_score": float (as used in the feature_quality_score formula),
+                        "quality_bonus_score": float (as used in the feature_quality_score formula),
+                        "primary_supers_type": string
+                        (e.g., Dynamic_Captions, Headlines)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -344,61 +290,38 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Quantifies segments where the product occupies at least 30% of the frame. 
-            This measures standard product visibility and presence within a recognizable 
-            context or environment.
-        """,
+                Quantifies segments where the product occupies at least 30% of the frame. 
+                This measures standard product visibility and presence within a recognizable context or environment.
+            """,
           prompt_template="""
-            Act as a professional Cinematographer and Video Analyst. Your goal is to 
-            measure 'Product Presence' via Close-Up detection.
-            
-            VIDEO METADATA: {metadata_summary}
+                Act as a professional Cinematographer and Video Analyst. Your goal is to 
+                measure 'Product Presence' via Close-Up detection.
+                
+                VIDEO METADATA: {metadata_summary}
 
-            ### 1. METRIC DEFINITIONS:
-            - **Product Close-Up (CU):** Product occupies 30% to 59% of the frame area.
-            - **Density Score:** (Total duration of Product CU shots) / (Total video duration).
-            Represented as feature_quality_score in the JSON.
+                ### 1. SHOT CLASSIFICATION (for reference):
+                    - Product Close-Up (CU): Product occupies 30% to 59% of the frame area.
 
-            ### 2. DYNAMIC SCORING (0.0 - 1.0):
-            - 0.9-1.0: Product CU is the primary visual anchor (Density > 60%).
-            - 0.6-0.8: Product is featured in CU at key intervals (Density 30-60%).
-            - 0.1-0.5: Product CU is incidental or brief (Density < 30%).
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float, 
-                "feature_quality_score": float, # Based on the Dynamic Scoring scale
-                "metrics": {{
-                    "density_score": float, # MANDATORY: CU duration / Total duration
-                    "average_sfr_percentage": float, # Average Subject-to-Frame ratio for CU shots
-                    "product_identifiability": float, # Clarity of branding (0.0 - 1.0)
-                    "framing_style": "Handheld" | "Studio-Static" | "Pan/Tilt"
-                }},
-                "spatial_analysis": {{
-                    "rule_of_thirds_align": boolean,
-                    "background_distraction_level": "Low" | "Medium" | "High",
-                    "is_product_centered": boolean
-                }},
-                "temporal_segments": [
-                    {{
-                        "start": float,
-                        "end": float,
-                        "sfr_percentage": float,
-                        "description": str 
-                    }}
-                ],
-                "overall_assessment": {{
-                    "visual_impact_score": float,
-                    "is_hook_product_featured": boolean, # Product CU in first 2 seconds?
-                    "summary": "Technical summary of product CU strategy"
-                }}
-            }}
-
-            ### EVALUATION LOGIC:
-            - Only count segments where the Product is the main subject and fills 30%-59% of the frame.
-            - If the product fills >60%, it exceeds this feature and belongs in the 'Extreme' category.
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the product is identifiable
+                       - how in focus it is (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision. 
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration of Product CU shots) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Product Identifiability (0.0 to 1.0) and Framing 
+                          Style (is it centered or following rule of thirds?).
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and shot durations.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "average_sfr_percentage": float (Average Subject-to-Frame Ratio for product shots),
+                        "product_identifiability": float (Clarity of branding from 0.0 to 1.0),
+                        "framing_style": string (e.g., Centered, Rule of Thirds)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -412,62 +335,38 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.BRAND,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Quantifies segments where the product is the dominant visual element, 
-            occupying 60% or more of the frame. This measures 'Macro' focus and 
-            high-detail product showcasing.
-        """,
+                Quantifies segments where the product is the dominant visual element, 
+                occupying 60% or more of the frame. This measures 'Macro' focus and 
+                high-detail product showcasing.
+            """,
           prompt_template="""
-            Act as a professional Cinematographer and Video Analyst. Your goal is to 
-            measure 'Product Dominance' via Extreme Close-Up (ECU) detection.
-            
-            VIDEO METADATA: {metadata_summary}
+                Act as a professional Cinematographer and Video Analyst. Your goal is to 
+                measure 'Product Dominance' via Extreme Close-Up (ECU) detection.
+                
+                VIDEO METADATA: {metadata_summary}
 
-            ### 1. METRIC DEFINITIONS:
-            - **Product Extreme Close-Up (ECU):** Product occupies 60% or more of the frame area.
-            - **Density Score:** (Total duration of Product ECU shots) / (Total video duration).
-            Represented as feature_quality_score in the JSON.
+                ### 1. SHOT CLASSIFICATION (for reference):
+                    - Product Extreme Close-Up (ECU): Product occupies 60% or more of the frame area.
 
-            ### 2. DYNAMIC SCORING (0.0 - 1.0):
-            - 0.9-1.0: Macro-heavy edit; high detail focus (Density > 40%).
-            - 0.6-0.8: Strategic use of macro shots for texture/detail (Density 15-40%).
-            - 0.1-0.5: Incidental or very brief macro moments (Density < 15%).
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "feature_quality_score": float, 
-                "metrics": {{
-                    "density_score": float, # MANDATORY: ECU duration / Total duration
-                    "peak_sfr_percentage": float, # Max frame fill observed
-                    "texture_visibility": "Low" | "Medium" | "High", # Does it show material detail?
-                    "lighting_quality": "Flat" | "Cinematic" | "Overexposed"
-                }},
-                "spatial_analysis": {{
-                    "edge_collision": boolean, # Does the product extend beyond frame edges?
-                    "depth_of_field": "Shallow" | "Deep", # Is the background blurred?
-                    "focal_point": str # e.g., "Logo", "Texture", "Nozzle", "Screen"
-                }},
-                "temporal_segments": [
-                    {{
-                        "start": float,
-                        "end": float,
-                        "sfr_percentage": float,
-                        "focus_point": str,
-                        "description": str 
-                    }}
-                ],
-                "overall_assessment": {{
-                    "visual_impact_score": float,
-                    "is_macro_hook": boolean, # Does the video open with a macro shot?
-                    "summary": "Technical summary of product ECU/Macro strategy"
-                }}
-            }}
-
-            ### EVALUATION LOGIC:
-            - Only count segments where the Product fills 60% or more of the frame.
-            - Focus on detail: ECU shots are intended to show the "hero" aspects of the product.
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the product's fine details and textures are visible
+                       - how in focus it is (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision. 
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration of Product ECU shots) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Texture Visibility and Lighting Quality (0.0 to 1.0).
+                        - Score from 0.0 to 1.0 reflecting effectiveness in showcasing high detail.
+                    5. Rationale & Evidence: Cite specific timestamps and shot durations.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "peak_sfr_percentage": float (Highest Subject-to-Frame Ratio for product shots),
+                        "texture_visibility": string (Visibility of fine details, e.g., High, Moderate, Low),
+                        "lighting_quality": string (Quality of lighting, e.g., Soft, Harsh, Studio)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -481,80 +380,46 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Evaluates the 'Show, Don't Tell' quality. Quantifies physical 
-            interaction, environmental realism, and utility demonstration. 
-            Measures both the duration of usage (Density) and the effectiveness 
-            of the demonstration (Quality Score).   
+                Evaluates the 'Show, Don't Tell' quality. Quantifies physical 
+                interaction, environmental realism, and utility demonstration. 
+                Measures both the duration of usage (Density) and the effectiveness 
+                of the demonstration (Quality Score).   
             """,
           prompt_template="""
-            Act as a professional Cinematographer and Video Analyst. 
-            Analyze the 'Product-in-Use' effectiveness.
+                Act as a professional Cinematographer and Video Analyst. 
+                Analyze the 'Product-in-Use' effectiveness.
 
-            VIDEO METADATA:
-            {metadata_summary}
+                VIDEO METADATA:
+                {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - INTERACTION DEPTH (40% weight): Physical contact and active engagement.
+                    - CONTEXTUAL REALISM (30% weight): "Lived-in" space vs. sterile studio.
+                    - UTILITY DEMONSTRATION (30% weight): Shows product's purpose/benefit.
 
-            1. INTERACTION DEPTH (40%)
-            - Focus: Physical contact and active engagement.
-            - Criteria: Is the product being handled, worn, consumed, or operated?
-            - 90-100: Detailed, multi-step interaction or sustained use (>4s).
-            - 70-89: Clear physical interaction but brief (2-4s).
-            - 0-69: Minimal touching or product is merely a prop in the frame.
-
-            2. CONTEXTUAL REALISM (30%)
-            - Focus: The "Where" and "Who". 
-            - Criteria: Is the environment a "lived-in" space (home, gym, office) vs. a sterile studio? 
-            - 90-100: Authentic daily-life setting with natural lighting and relatable user behavior.
-            - 70-89: Recognizable setting but feels slightly "staged" or over-polished.
-            - 0-69: Infomercial style, white backgrounds, or disconnected from reality.
-
-            3. UTILITY DEMONSTRATION (30%)
-            - Focus: The "Why".
-            - Criteria: Does the interaction show the product's purpose/benefit without needing a voiceover?
-            - 90-100: The usage clearly solves a pain point or achieves a goal (e.g., thirst quenched, app task finished).
-            - 70-89: Product is used correctly but the "benefit" is implied rather than obvious.
-            - 0-69: Random interaction that doesn't showcase what the product actually does.
-
-            FINAL CALCULATION:
-            Overall Score = (Interaction * 0.4) + (Realism * 0.3) + (Utility * 0.3)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "interaction_depth": {{
-                        "score": int,
-                        "action_type": "physical|consumption|digital|service",
-                        "duration": float,
-                        "evidence": str
-                    }},
-                    "contextual_realism": {{
-                        "score": int,
-                        "environment": str,
-                        "authenticity_level": "natural|staged|studio",
-                        "observation": str
-                    }},
-                    "utility_demo": {{
-                        "score": int,
-                        "benefit_shown": str,
-                        "clarity": "explicit|implicit|none"
-                    }},
-                    "final_scoring": {{
-                        "interaction_weighted": float,
-                        "realism_weighted": float,
-                        "utility_weighted": float,
-                        "total_score": float # Sum of the three weighted scores above
-                    }}
-                }}
-            }}
-
-            SCORING GUIDANCE:
-            - HIGH (80+): A "Day-in-the-life" feel. User solves a problem using the product in a real room.
-            - MED (50-79): Product is used, but it feels like a "commercial." Correct use, but overly scripted.
-            - LOW (<50): Product is just sitting there, or being held like a trophy for the camera.
-            """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly identifiable the product is
+                       - how clearly identifiable its usage are (regardless of duration or quality score). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision. 
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of active product usage) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Interaction Depth * 0.40) + 
+                          (Contextual Realism * 0.30) + (Utility Demonstration * 0.30)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and actions 
+                       supporting the scores.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "interaction_depth_score": int (Score for physical engagement from 0 to 100),
+                        "contextual_realism_score": int (Score for realistic environment from 0 to 100),
+                        "utility_demo_score": int (Score for showing purpose/benefit from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -568,36 +433,41 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Quantifies the informality of the script. Measures the use of everyday language, 
-            slang, contractions, and conversational filler vs. formal/corporate scripted speech.
-        """,
-          prompt_template="""
-            Act as a Linguistic and  Video Analyst. Your goal is to measure 'Tone Informality.'
-
-            VIDEO METADATA:
-            {metadata_summary}
-
-            ### 1. METRIC DEFINITIONS:
-            - **Density Score:** (Duration of conversational/casual speech) / (Total speech duration).
-            - **Informality Rating:** (0.0 - 1.0) 1.0 = "POV/FaceTime" style; 0.5 = Standard commercial; 0.0 = Corporate/Medical.
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "feature_quality_score": float,
-                "metrics": {{
-                    "density_score": float,
-                    "slang_presence": boolean,
-                    "filler_word_frequency": "Low" | "Medium" | "High", # e.g., "um", "like", "literally"
-                    "script_type": "Ad-lib/Spontaneous" | "Conversational-Scripted" | "Formal"
-                }},
-                "overall_assessment": {{
-                    "authenticity_score": float, # How 'real' does the speech feel?
-                    "summary": "Analysis of linguistic tone"
-                }}
-            }}
+                Quantifies the informality of the script. Measures the use of everyday language, 
+                slang, contractions, and conversational filler vs. formal/corporate scripted speech.
             """,
+          prompt_template="""
+                Act as a Linguistic and Video Analyst. Your goal is to measure 
+                'Tone Informality.'
+
+                VIDEO METADATA:
+                {metadata_summary}
+
+                ### 1. DEFINITIONS (for reference):
+                    - Informality Rating: (0.0 - 1.0) 1.0 = "POV/FaceTime" style; 
+                      0.5 = Standard commercial; 0.0 = Corporate/Medical.
+
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you can identify slang
+                       - how clearly you can identify filler words
+                       - how clearly you can identify conversational structures (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision. 
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of conversational/casual speech) / (Total speech duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on the Informality Rating (0.0 to 1.0). Higher score 
+                          for more casual/authentic tone.
+                        - Score from 0.0 to 1.0 reflecting effectiveness in sounding native.
+                    5. Rationale & Evidence: Cite specific phrases and timestamps.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "slang_presence": boolean (True if slang or informal words are present),
+                        "filler_word_frequency": string (e.g., High, Moderate, Low),
+                        "script_type": string (e.g., Conversational, Scripted, Spontaneous)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -611,36 +481,37 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-        Detects and quantifies attempts at humor, including wit, physical comedy, 
-        satire, or comedic timing.
-    """,
+                Detects and quantifies attempts at humor, including wit, physical comedy, 
+                satire, or comedic timing.
+            """,
           prompt_template="""
-        Act as a Creative Strategist. Analyze the video for 'Comedic Intent.'
+                Act as a Creative Strategist. Analyze the video for 'Comedic Intent.'
 
-            VIDEO METADATA:
-            {metadata_summary}
+                VIDEO METADATA:
+                {metadata_summary}
 
-        ### 1. METRIC DEFINITIONS:
-        - **Density Score:** (Duration of comedic setups/payoffs) / (Total video duration).
-        - **Humor Type:** "Observational", "Slapstick", "Deadpan", "Satirical".
+                ### 1. DEFINITIONS (for reference):
+                    - Humor Type: "Observational", "Slapstick", "Deadpan", "Satirical".
 
-        ### FORMAT RESPONSE AS JSON:
-        {{
-            "detected": boolean,
-            "confidence_score": float,
-            "feature_quality_score": float,
-            "metrics": {{
-                "density_score": float,
-                "humor_mechanism": str, # e.g., "Visual gag", "Funny VO", "Reaction"
-                "edge_factor": float # 0.0 (Safe) to 1.0 (Risky/Bold)
-            }},
-            "overall_assessment": {{
-                "entertainment_value": float,
-                "is_hook_funny": boolean,
-                "summary": "Technical summary of humor strategy"
-            }}
-        }}
-    """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you can identify attempts at humor
+                       - how clearly you can identify comedic timing (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of comedic setups/payoffs) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Edge Factor (how daring or unique the humor is) 
+                          and Comedic Timing (0.0 to 1.0).
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and comedic moments.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "humor_mechanism": string (Type of humor, e.g., Observational, Slapstick, Deadpan),
+                        "edge_factor": float (How daring or unique the humor is from 0.0 to 1.0)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -654,60 +525,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.CONNECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Video features a relatable character whose journey or transformation resonates with audience.
-            Evaluates character prominence, relatability, and narrative journey shown.
+                Video features a relatable character whose journey or transformation resonates with audience.
+                Evaluates character prominence, relatability, and narrative journey shown.
             """,
           prompt_template="""
-            Act as a Narrative Strategist and Video Analyst. Your goal is to measure 
-            'Character Dominance' and 'Persona-Led Storytelling.'
+                Act as a Narrative Strategist and Video Analyst. Your goal is to measure 
+                'Character Dominance' and 'Persona-Led Storytelling.'
 
-            VIDEO METADATA:
-            {metadata_summary}
+                VIDEO METADATA:
+                {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - CHARACTER PROMINENCE (40% weight): Protagonist with distinct personality/role.
+                    - CHARACTER JOURNEY (30% weight): Visible journey, change, or problem-solving.
+                    - AUDIENCE RELATABILITY (30% weight): Relatable to target audience.
 
-            1. CHARACTER PROMINENCE (40% weight)
-               Character is clear protagonist with distinct personality/role
-               Look for: Clear lead character, distinct personality traits, on-screen presence
-               - 90-100: Strong, well-developed protagonist
-               - 70-89: Clear character with distinct personality
-               - 50-69: Character present but underdeveloped
-               - 0-49: No clear character focus
-
-            2. CHARACTER JOURNEY/TRANSFORMATION (30% weight)
-               Character shows visible journey, change, or problem-solving
-               Look for: Before/after transformation, challenge faced, goal achieved, emotional arc
-               - 90-100: Clear narrative journey with visible transformation
-               - 70-89: Character shows clear journey or growth
-               - 50-69: Some journey element but subtle
-               - 0-49: No journey or transformation shown
-
-            3. AUDIENCE RELATABILITY (30% weight)
-               Character is relatable to target audience (emotional, realistic, authentic)
-               Look for: Authentic emotion, realistic situation, audience alignment, genuine engagement
-               - 90-100: Highly relatable, authentic emotion
-               - 70-89: Mostly relatable character
-               - 50-69: Somewhat relatable
-               - 0-49: Not relatable or inauthentic
-
-            FINAL CALCULATION:
-            Overall Score = (Prominence × 0.40) + (Journey × 0.30) + (Relatability × 0.30)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "character_present": boolean,
-                    "character_type": str,
-                    "personality_traits": [str],
-                    "journey_type": str,
-                    "prominence_score": int,
-                    "journey_score": int,
-                    "relatability_score": int,
-                    "weighted_overall": float
-                }}
-            }}""",
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the character is identifiable as a protagonist (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of character prominence) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Character Prominence * 0.40) + 
+                          (Character Journey * 0.30) + (Audience Relatability * 0.30)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and actions 
+                       supporting the scores.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "character_type": string (e.g., Creator, Actor, Celebrity),
+                        "prominence_score": int (Score for character dominance from 0 to 100),
+                        "journey_score": int (Score for visible journey from 0 to 100),
+                        "relatability_score": int (Score for audience relatability from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -721,65 +576,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.DIRECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-        Detects and quantifies spoken instructions that direct the viewer to take 
-        action. This includes verbal commands from Voice-Overs (VO) or on-screen talent. 
-        Measures 'CTA Density' and 'Urgency Level' to determine the strength of the 
-        conversion signal.
-    """,
+                Detects and quantifies spoken instructions that direct the viewer to take 
+                action. This includes verbal commands from Voice-Overs (VO) or on-screen talent. 
+                Measures 'CTA Density' and 'Urgency Level' to determine the strength of the 
+                conversion signal.
+            """,
           prompt_template="""
-        Act as a Direct Response Marketing Analyst. Your goal is to identify and 
-        quantify the spoken Call to Action (CTA).
-        
-        VIDEO METADATA: {metadata_summary}
+                Act as a Direct Response Marketing Analyst. Your goal is to identify and 
+                quantify the spoken Call to Action (CTA).
+                
+                VIDEO METADATA: {metadata_summary}
 
-        ### 1. METRIC DEFINITIONS:
-        - **Density Score:** (Total duration of the spoken CTA) / (Total video duration).
-          Represented as density_score in the JSON.
-        - **CTA Urgency:** (0.0 - 1.0) 1.0 = Explicit command with time-sensitivity (e.g., "Click the link below."); 
-          0.5 = General suggestion (e.g., "Check us out"); 0.1 = Brand mention only.
+                ### 1. CTA DELIVERY MODES (for reference):
+                    - Direct Address: On-screen talent looks at camera and gives the CTA.
+                    - Voice-Over (VO): Narrator delivers the CTA over b-roll or product shots.
+                    - Off-Camera: Secondary character or background voice mentions the action.
 
-        ### 2. CTA DELIVERY MODES:
-        - **Direct Address:** On-screen talent looks at camera and gives the CTA.
-        - **Voice-Over (VO):** Narrator delivers the CTA over b-roll or product shots.
-        - **Off-Camera:** Secondary character or background voice mentions the action.
-
-        ### FORMAT RESPONSE AS JSON:
-        {{
-            "detected": boolean,
-            "confidence_score": float, # Certainty that a verbal CTA was issued
-            "feature_quality_score": float, # 0.0-1.0 based on clarity and persuasiveness
-            "metrics": {{
-                "density_score": float, # MANDATORY: CTA duration / Total video duration
-                "cta_urgency_score": float, # 0.0 to 1.0
-                "delivery_method": "On-Screen_Talent" | "Voice-Over" | "Mixed",
-                "cta_type": "Hard_Sell" | "Soft_Suggestion" | "Inspirational"
-            }},
-            "linguistic_analysis": {{
-                "verbatim_text": str, # The exact words used for the CTA
-                "placement_type": "End-Roll" | "Mid-Roll" | "Early-Hook",
-                "contains_incentive": boolean # e.g., "Use code SAVE10", "Free shipping"
-            }},
-            "temporal_segments": [
-                {{
-                    "start": float,
-                    "end": float,
-                    "cta_content": str,
-                    "loudness_relative_to_avg": "Quieter" | "Normal" | "Emphasized"
-                }}
-            ],
-            "overall_assessment": {{
-                "conversion_potential": float, # How likely is this audio to drive a click?
-                "is_cta_at_end": boolean, # Does the audio end on a CTA?
-                "summary": "Technical analysis of verbal CTA effectiveness"
-            }}
-        }}
-
-        ### EVALUATION LOGIC:
-        1. Scan the audio track for imperative verbs (Shop, Buy, Click, Visit, Try, Download).
-        2. Calculate the **density_score** by summing the duration of these verbal triggers.
-        3. Assess **feature_quality_score** based on vocal clarity and "The Ask"—if the CTA is muffled or buried under loud music, lower the score.
-        4. Note the placement: A CTA at the very end is standard; a CTA in the first 5 seconds is a "Fast-Action" strategy.
-    """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the spoken CTA is audible
+                       - how identifiable it is (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Total duration of the spoken CTA) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on CTA Urgency (0.0 to 1.0). 1.0 = Explicit command 
+                          with time-sensitivity; 0.5 = General suggestion; 0.1 = Brand mention only.
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and the verbatim 
+                       text of the CTA.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "cta_urgency_score": float (Urgency of command from 0.0 to 1.0),
+                        "delivery_method": string (e.g., Direct Address, Voice-Over),
+                        "cta_type": string (e.g., Explicit command, Suggestion),
+                        "placement_type": string (e.g., End of video, Beginning, Middle)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -793,59 +627,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.DIRECT,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Audio/voiceover explicitly announces special offer, discount, or deal.
-            Evaluates clarity of offer type, specific details mentioned, and delivery emphasis.
+                Audio/voiceover explicitly announces special offer, discount, or deal.
+                Evaluates clarity of offer type, specific details mentioned, and delivery emphasis.
             """,
           prompt_template="""
-            Act as a Direct Response Marketing Analyst. Your goal is to evaluate: Is there a SPECIAL OFFER announced in speech?
+                Act as a Direct Response Marketing Analyst. Your goal is to evaluate: Is there a SPECIAL OFFER announced in speech?
 
-            VIDEO METADATA:
-            {metadata_summary}
+                VIDEO METADATA:
+                {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - OFFER TYPE CLARITY (40% weight): Clear announcement of what offer is.
+                    - DELIVERY EMPHASIS (35% weight): Strong emphasis given through voice tone.
+                    - OFFER PROMINENCE (25% weight): Featured continuously or at strategic moments.
 
-            1. OFFER TYPE CLARITY (40% weight)
-               Clear announcement of what offer is (discount %, deal, promotion type)
-               Look for: "20% off", "Free with purchase", "Buy one get one", "Limited time deal"
-               - 90-100: Very clear offer type with specific details (e.g., "20% off")
-               - 70-89: Clear offer mentioned with reasonable detail
-               - 50-69: Offer mentioned but details vague or implied
-               - 0-49: No offer details in audio
-
-            2. DELIVERY EMPHASIS (35% weight)
-               Strong emphasis given through voice tone, repetition, or prominence
-               Look for: Emphatic tone, repeated mention, early in spot, vocal excitement
-               - 90-100: Strong emphasis with enthusiastic delivery
-               - 70-89: Clear emphasis given in delivery
-               - 50-69: Mentioned with moderate emphasis
-               - 0-49: Buried or casual mention
-
-            3. OFFER PROMINENCE (25% weight)
-               Offer featured continuously or at strategic moments in video
-               Look for: Multiple mentions, mentioned early, highlighted throughout
-               - 90-100: Prominent throughout, multiple emphatic mentions
-               - 70-89: Clear prominence in video
-               - 50-69: Mentioned but not prominent
-               - 0-49: Single casual mention
-
-            FINAL CALCULATION:
-            Overall Score = (OfferClarity × 0.40) + (Emphasis × 0.35) + (Prominence × 0.25)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "offer_type": str,
-                    "offer_details": str,
-                    "delivery_tone": str,
-                    "mention_count": int,
-                    "offer_clarity_score": int,
-                    "emphasis_score": int,
-                    "prominence_score": int,
-                    "weighted_overall": float
-                }}
-            }}""",
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the special offer is audible
+                       - how identifiable it is (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of offer announcement) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Offer Clarity * 0.40) + 
+                          (Delivery Emphasis * 0.35) + (Offer Prominence * 0.25)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and the verbatim 
+                       text of the offer.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "offer_type": string (Type of offer, e.g., Discount, Deal, Freebie),
+                        "offer_clarity_score": int (Score for clarity of offer from 0 to 100),
+                        "emphasis_score": int (Score for delivery emphasis from 0 to 100),
+                        "prominence_score": int (Score for prominence from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -854,71 +673,57 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
       ),
       VideoFeature(
           id="shorts_production_style_index",
-          name="Production Style",
+          name="Production Style (User Generated)",
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-        Quantifies the visual 'Lo-Fi' vs. 'Hi-Fi' characteristics of the video. 
-        Measures the presence of UGC (User Generated Content) markers such as 
-        handheld camera movement, natural lighting, and native mobile aesthetics. 
-        Assesses if the video feels like an 'organic post' or a 'produced commercial.'
-    """,
+                Quantifies the ad's balance between a 'native social appearance' and 'premium brand quality.' 
+                Measures the strategic integration of UGC markers (handheld motion, casual framing, natural lighting) 
+                with studio polish (clear audio, stabilization). Assesses if the video successfully delivers 
+                a high-converting 'organic ad' feel rather than an over-produced traditional commercial.
+            """,
           prompt_template="""
-        Act as a professional Cinematographer and Social Media Strategist. Your goal is to 
-        quantify the 'UGC Authenticity' of the production style for this video.
-        
-        VIDEO METADATA: {metadata_summary}
+                Act as a Data-Driven Performance Ad Creative Strategist and Media 
+                Buyer. Your goal is to evaluate how effectively this video blends 
+                high-quality commercial standards with native social UGC mechanics 
+                to optimize viewer retention and brand trust.
+                
+                VIDEO METADATA: {metadata_summary}
 
-        ### 1. METRIC DEFINITIONS:
-        - **Density Score:** (Duration of shots that appear native/UGC) / (Total video duration). 
-          Represented as density_score in the JSON.
-        - **Authenticity Rating:** (0.0 - 1.0) 1.0 = Indistinguishable from an organic user upload; 
-          0.5 = High-quality "Studio-UGC" (professional gear mimicking a mobile look); 
-          0.0 = Traditional high-budget glossy commercial.
+                ### 1. PRODUCTION MARKERS REFERENCE:
+                    - Raw UGC: Raw mobile camera footage, handheld jitter, natural 
+                      lighting, "face-to-lens" creator delivery.
+                    - Premium UGC / Studio-UGC: High-end mobile or mirrorless capture, 
+                      stabilized motion, softbox/ring lighting, crisp external 
+                      microphone audio, retaining a highly relatable, platform-native 
+                      look.
+                    - Over-Produced Commercial: Cinema-grade cameras, heavy 3-point 
+                      studio lighting, deep color grading, highly polished actors; 
+                      feels explicitly like a traditional TV commercial.
 
-        ### 2. PRODUCTION MARKERS:
-        - **UGC/Lo-Fi:** Visible handheld jitter, natural/ambient lighting, mobile sensor resolution, "face-to-lens" intimacy.
-        - **Studio-UGC:** Polished vertical framing, stabilized movement, crisp external-mic audio, but retaining a casual feel.
-        - **High-Production:** Cinema-grade lenses, shallow depth of field, artificial 3-point lighting, professional color grading.
-
-        ### FORMAT RESPONSE AS JSON:
-        {{
-            "detected": boolean,
-            "confidence_score": float, # Certainty of production style classification
-            "feature_quality_score": float, # 0.0-1.0 (How well it executes the intended style)
-            "metrics": {{
-                "density_score": float, # MANDATORY: UGC-style duration / Total video duration
-                "camera_stability": "Handheld" | "Stabilized" | "Tripod/Static",
-                "lighting_type": "Natural/Ambient" | "Studio-Polished" | "Raw/Incidental",
-                "equipment_look": "Mobile_Phone" | "Professional_Camera" | "Webcam"
-            }},
-            "aesthetic_analysis": {{
-                "platform_native_elements": boolean, # Use of top social media app fonts/stickers
-                "environment_realism": "Lived-in/Messy" | "Curated/Clean" | "Studio/Abstract",
-                "interface_compliance": "Safe_Zone_Optimized" | "UI_Overlapped"
-            }},
-            "temporal_segments": [
-                {{
-                    "start": float,
-                    "end": float,
-                    "style_type": "True_UGC" | "Studio_UGC" | "Corporate_Ad",
-                    "description": str 
-                }}
-            ],
-            "overall_assessment": {{
-                "lofi_index": float, # 0.0 (Glossy) to 1.0 (Raw)
-                "is_hook_native_looking": boolean, # Does it look like an organic post in the first 2s?
-                "summary": "Technical analysis of the production authenticity and stylistic approach"
-            }}
-        }}
-
-        ### EVALUATION LOGIC:
-        1. Observe camera physics: Mobile devices have distinct micro-jitters; cinema rigs have "weight."
-        2. Check for "Safe Zone" awareness: Is the subject framed to avoid being covered by top social media UI (avatars, descriptions)?
-        3. Calculate **density_score** by identifying the total runtime of "authentic-looking" footage.
-        4. Lower the **Authenticity Rating** if the video uses professional motion graphics or studio-exclusive color palettes.
-    """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you identify platform-native ad styles (Raw UGC or Premium UGC). Otherwise set to False.
+                    2. Set confidence_score: Float from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Estimated duration of native-feeling footage) / (Total video duration)
+                        - Estimate the ratio by approximating the combined duration of Raw UGC and Premium UGC segments using metadata timestamps.
+                        - Returns a float between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Rate the creative execution on a scale from 0.0 to 1.0.
+                        - 1.0 = Exceptional Premium UGC that seamlessly balances high production value with organic social authenticity.
+                        - 0.5 = Forced or poorly executed UGC that feels overtly scripted.
+                        - 0.0 = Traditional, rigid commercial style with zero platform-native integration.
+                    5. Rationale & Evidence: Provide text justification showing your estimated duration math and analyzing how the production style impacts ad performance or brand safety.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "camera_stability": string (e.g., Handheld jitter, Stabilized, Tripod),
+                        "lighting_type": string (e.g., Natural, Softbox, Ring light),
+                        "equipment_look": string (e.g., Mobile phone, Mirrorless camera),
+                        "environment_realism": string (e.g., Lived-in space, Sterile studio)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -932,63 +737,45 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Quantifies the 'Native Emulation' of the production. Measures how effectively 
-            the video mimics organic social content through lo-fi aesthetics, handheld 
-            camera physics, and non-commercial editing patterns.
-        """,
+                Quantifies the 'Native Emulation' of the production. Measures how effectively 
+                the video mimics organic social content through lo-fi aesthetics, handheld 
+                camera physics, and non-commercial editing patterns.
+            """,
           prompt_template="""
-            Act as a Social Media Trends Analyst and Video Strategist. Your goal is to 
-            quantify the 'UGC Authenticity' of the production style.
-            
-            VIDEO METADATA: {metadata_summary}
+                Act as a Social Media Trends Analyst and Video Strategist. 
+                Your goal is to quantify the 'UGC Authenticity' of the production 
+                style.
+                
+                VIDEO METADATA: {metadata_summary}
 
-            ### 1. PRODUCTION MARKERS:
-            - **Native/Lo-Fi:** Handheld jitter, natural ambient lighting, mobile sensor resolution, face-to-lens intimacy.
-            - **Studio-Hybrid:** Vertical framing and casual tone but with professional lighting or stabilized movement.
-            - **Commercial/Glossy:** Cinema lenses, 3-point lighting, professional color grading, or traditional ad pacing.
+                ### 1. PRODUCTION MARKERS (for reference):
+                    - Native/Lo-Fi: Handheld jitter, natural ambient lighting, 
+                      mobile sensor resolution, face-to-lens intimacy.
+                    - Studio-Hybrid: Vertical framing and casual tone but with 
+                      professional lighting or stabilized movement.
+                    - Commercial/Glossy: Cinema lenses, 3-point lighting, 
+                      professional color grading, or traditional ad pacing.
 
-            ### 2. DENSITY & QUALITY LOGIC:
-            - **Density Score:** (Duration of shots that appear native/organic) / (Total video duration).
-            - **Feature Quality Score (Authenticity):** 
-                * 0.9-1.0: Indistinguishable from an organic user post.
-                * 0.7-0.8: High-quality Studio-UGC (mimics mobile but feels "clean").
-                * 0.4-0.6: Polished commercial with minor native elements.
-                * 0.0-0.3: Traditional high-budget commercial style.
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float, 
-                "feature_quality_score": float, # The 0.0-1.0 Authenticity Rating
-                "metrics": {{
-                    "density_score": float, # Duration of organic style / Total duration
-                    "camera_stability": "Handheld" | "Stabilized" | "Static",
-                    "lighting_type": "Natural" | "Studio" | "Mixed",
-                    "edit_style": "Fast-Cut" | "Long-Take" | "Jump-Cuts"
-                }},
-                "aesthetic_analysis": {{
-                    "lofi_index": float, # 0.0 (Glossy) to 1.0 (Raw)
-                    "is_hook_native": boolean, # Does the first 3s look like a post, not an ad?
-                    "platform_native_vibe": boolean # Use of native-style fonts/graphics
-                }},
-                "temporal_segments": [
-                    {{
-                        "start": float,
-                        "end": float,
-                        "style_type": "Native" | "Hybrid" | "Commercial",
-                        "description": str
-                    }}
-                ],
-                "overall_assessment": {{
-                    "visual_impact_score": float, # Effectiveness for mobile engagement
-                    "summary": "Concise technical summary of production authenticity"
-                }}
-            }}
-
-            ### EVALUATION LOGIC:
-            - **The Hook:** If the first 3 seconds are "Native" in style, increase the feature_quality_score.
-            - **Intent:** Distinguish between intentional Lo-Fi style and poor production quality.
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present 
+                    in the video, based on:
+                       - how clearly you can identify the native/organic style markers (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of shots that appear native/organic) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on the Authenticity Rating (0.0 to 1.0). 1.0 = 
+                          Indistinguishable from an organic user post; 0.5 = Studio-Hybrid; 0.0 = Traditional commercial.
+                        - Score from 0.0 to 1.0 reflecting effectiveness in sounding/looking native.
+                    5. Rationale & Evidence: Cite specific timestamps and style types.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "camera_stability": string (e.g., Handheld jitter, Smooth mobile),
+                        "lighting_type": string (e.g., Natural ambient, Softbox),
+                        "edit_style": string (e.g., Jump cuts, Platform-native, Traditional)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1002,63 +789,42 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Detects intentional creative emoji use: 1. Standard characters in text, 
-            2. Animated effects, 3. Emoji-style stickers/graphics, 
-            4. Platform-specific features. Excludes incidental background captures.
-        """,
+                Detects intentional creative emoji use: 1. Standard characters in text, 
+                2. Animated effects, 3. Emoji-style stickers/graphics, 
+                4. Platform-specific features. Excludes incidental background captures.
+            """,
           prompt_template="""
-            Act as a Visual Researcher and Social Media Analyst. Your goal is to 
-            identify and quantify the use of emojis as creative overlays.
-            
-            VIDEO METADATA: {metadata_summary}
+                Act as a Visual Researcher and Social Media Analyst. Your goal is to 
+                identify and quantify the use of emojis as creative overlays.
+                
+                VIDEO METADATA: {metadata_summary}
 
-            ### 1. EMOJI TYPES:
-            - **Standard:** Unicode emoji characters within text overlays.
-            - **Animated:** Emojis that pop, shake, or move.
-            - **Stickers:** Large, graphical emoji-style elements or platform-native stickers.
+                ### 1. EMOJI TYPES (for reference):
+                    - Standard: Unicode emoji characters within text overlays.
+                    - Animated: Emojis that pop, shake, or move.
+                    - Stickers: Large, graphical emoji-style elements or platform-native stickers.
 
-            ### 2. DENSITY & QUALITY LOGIC:
-            - **Density Score:** (Sum of seconds with visible emojis) / (Total video duration).
-            - **Feature Quality Score:** 
-                * 0.9-1.0: Strategic use (syncs with audio, emphasizes key points).
-                * 0.6-0.8: Moderate use, primarily decorative.
-                * 0.1-0.5: Incidental or poorly placed (covers key subjects).
-                * 0.0: No emojis detected.
-
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "feature_quality_score": float, # 0.0-1.0 based on narrative relevance
-                "metrics": {{
-                    "density_score": float, # Total emoji duration / Total duration
-                    "emoji_count_estimate": int, 
-                    "style": "Static" | "Animated" | "Kinetic",
-                    "placement": "Anchored_to_Text" | "Floating" | "Center_Pop"
-                }},
-                "spatial_analysis": {{
-                    "safe_zone_compliance": boolean, # Avoids UI overlap at bottom/right
-                    "primary_purpose": "Emphasis" | "Tone" | "CTA" | "Decorative"
-                }},
-                "temporal_segments": [
-                    {{
-                        "start": float,
-                        "end": float,
-                        "emoji_type": str,
-                        "description": str
-                    }}
-                ],
-                "overall_assessment": {{
-                    "is_hook_emoji": boolean, # Emoji present in the first 2 seconds?
-                    "visual_impact_score": float, # Contribution to "organic" feel
-                    "summary": "Summary of emoji integration and effectiveness"
-                }}
-            }}
-
-            ### EVALUATION LOGIC:
-            - **Placement:** Lower the quality score if emojis are in the "Dead Zone" (bottom/right where UI buttons sit).
-            - **Relevance:** Higher impact if the emoji matches the spoken word or emotional tone.
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you can identify emojis as intentional creative overlays
+                       - whether they are clearly identifiable (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Sum of seconds with visible emojis) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Relevance (do they match the tone/content?) and 
+                          Placement (avoiding dead zones).
+                        - Score from 0.0 to 1.0 reflecting effectiveness.
+                    5. Rationale & Evidence: Cite specific timestamps and emoji types used.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "emoji_count_estimate": int (Estimated number of emojis used),
+                        "style": string (e.g., Standard, Animated, Sticker),
+                        "placement": string (e.g., Safe zone, Center, Edge),
+                        "primary_purpose": string (e.g., Emphasis, Humor, Aesthetic)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1072,56 +838,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Evaluates the intimacy and continuity of direct lens address. 
-            Measures the 'Breaking of the Fourth Wall' through gaze and conversational delivery.
+                Evaluates the intimacy and continuity of direct lens address. 
+                Measures the 'Breaking of the Fourth Wall' through gaze and conversational delivery.
             """,
           prompt_template="""
-            Act as a Cinematographer and Parasocial Interaction Specialist. 
-            Evaluate: How effectively does the character connect with the viewer via direct lens address?
+                Act as a Cinematographer and Parasocial Interaction Specialist. 
+                Evaluate: How effectively does the character connect with the viewer 
+                via direct lens address?
 
-            VIDEO METADATA: {metadata_summary}
+                VIDEO METADATA: {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - GAZE CONTINUITY & INTENSITY (45% weight): Eyes locked on lens, "FaceTime" feel.
+                    - DELIVERY INTIMACY (30% weight): Casual, peer-to-peer tone.
+                    - TEMPORAL DOMINANCE (25% weight): How much of the narrative is led by direct address.
 
-            1. GAZE CONTINUITY & INTENSITY (45% weight)
-               Focus: Are the eyes locked on the lens? Is it a "FaceTime" feel?
-               - 90-100: Constant, unwavering eye contact that feels personal.
-               - 70-89: Frequent direct looks, clear address to viewer.
-               - 0-49: Looking at self on screen or off-camera; incidental gaze.
-
-            2. DELIVERY INTIMACY (30% weight)
-               Focus: Conversational proximity and vocal tone.
-               - 90-100: Casual, peer-to-peer tone; feels unscripted and close.
-               - 70-89: Clear address but slightly presentational.
-               - 0-69: Corporate or formal delivery; distant.
-
-            3. TEMPORAL DOMINANCE (25% weight)
-               Focus: How much of the narrative is led by this direct address?
-               - 90-100: Character address drives the entire video narrative.
-               - 70-89: Significant segments of direct address.
-               - 0-69: Brief intro/outro address only.
-
-            FINAL CALCULATION:
-            Overall Score = (Gaze × 0.45) + (Intimacy × 0.30) + (Dominance × 0.25)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "character_type": str, # e.g., "Creator", "Mascot"
-                    "gaze_consistency": "high"|"medium"|"low",
-                    "delivery_style": str,
-                    "gaze_intensity_score": int,
-                    "delivery_intimacy_score": int,
-                    "temporal_dominance_score": int,
-                    "weighted_overall": float
-                }},
-                "metrics": {{
-                    "density_score": float, # Duration of direct address / Total duration
-                    "is_hook_direct": boolean
-                }}
-            }}""",
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the character is identifiable as addressing the lens (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of direct lens address) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Gaze Continuity * 0.45) + 
+                          (Delivery Intimacy * 0.30) + (Temporal Dominance * 0.25)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and character 
+                       actions supporting the scores.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "gaze_consistency": string (e.g., Consistent, Intermittent, Rare),
+                        "delivery_style": string (e.g., Conversational, Scripted, Dynamic),
+                        "gaze_intensity_score": int (Score for intensity of gaze from 0 to 100),
+                        "delivery_intimacy_score": int (Score for intimacy of delivery from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1135,56 +889,44 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Evaluates if the brand is positioned as a secondary, natural element. 
-            High scores indicate the brand feels like part of the environment, not a forced ad.
+                Evaluates if the brand is positioned as a secondary, natural element. 
+                High scores indicate the brand is positioned as a secondary element and feels like part of the environment, 
+                not a forced ad.
             """,
           prompt_template="""
-            Act as a Brand Integration Analyst. 
-            Evaluate: Is the brand naturally secondary within the organic content?
+                Act as a Brand Integration Analyst. 
+                Evaluate: Is the brand naturally secondary within the organic content?
 
-            VIDEO METADATA:
-            {metadata_summary}
+                VIDEO METADATA:
+                {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - NARRATIVE INTEGRATION (40% weight): Brand exists as a natural prop or mention.
+                    - VISUAL SUBTLETY (35% weight): Positioned to avoid "Ad Blindness".
+                    - CONTEXTUAL RELEVANCE (25% weight): Fits the "Lived-in" environment.
 
-            1. NARRATIVE INTEGRATION (40% weight)
-               Focus: Does the brand exist as a natural prop or mention in a larger story?
-               - 90-100: Brand is seamless; story makes sense even without the logo.
-               - 70-89: Brand is clearly secondary but narrative-aligned.
-               - 0-69: Narrative feels forced around the brand (Ad-like).
-
-            2. VISUAL SUBTLETY (35% weight)
-               Focus: Is the brand positioned to avoid "Ad Blindness"?
-               - 90-100: Brand is clear but not the focal point (e.g., on clothing or background).
-               - 70-89: Brand is visible but doesn't dominate the center frame.
-               - 0-69: Brand is center-frame, dominant, or high-contrast (Forced focus).
-
-            3. CONTEXTUAL RELEVANCE (25% weight)
-               Focus: Does the brand fit the "Lived-in" environment?
-               - 90-100: Perfectly fits the setting (e.g., gym brand in a gym).
-               - 70-89: Logical fit, but feels slightly staged.
-               - 0-69: Out of place; studio environment.
-
-            FINAL CALCULATION:
-            Overall Score = (Narrative × 0.40) + (Subtle × 0.35) + (Context × 0.25)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "integration_method": str, # e.g., "prop", "attire", "verbal"
-                    "primary_focus": str, # What is the main focus if not the brand?
-                    "narrative_score": int,
-                    "visual_subtle_score": int,
-                    "context_score": int,
-                    "weighted_overall": float
-                }},
-                "metrics": {{
-                    "brand_density": float,
-                    "is_brand_dominant": boolean # False is better for this feature
-                }}
-            }}""",
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly the brand is identifiable (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of brand visibility) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Narrative Integration * 0.40) + 
+                          (Visual Subtlety * 0.35) + (Contextual Relevance * 0.25)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and visual cues.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "integration_method": string (e.g., Prop, Mention, Background),
+                        "narrative_score": int (Score for narrative integration from 0 to 100),
+                        "visual_subtle_score": int (Score for visual subtlety from 0 to 100),
+                        "context_score": int (Score for contextual relevance from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1198,35 +940,40 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Determines if the video is led by a relatable 'everyday person' or creator. 
-            Returns negative if the character is a professional actor, celebrity, 
-            or fictional/animated entity.
-        """,
+                Determines if the video is led by a relatable 'everyday person' or creator. 
+                Returns negative if the character is a professional actor, celebrity, 
+                or fictional/animated entity.
+            """,
           prompt_template="""
-            Evaluate if the primary character in this ad is an 'Everyday Person'.
+                Evaluate if the primary character in this ad is an 'Everyday Person'.
 
-            ### DEFINITION:
-            An 'Everyday Person' is an organic creator or real user who feels 
-            unpolished and relatable. This feature is FALSE if the person is a 
-            professional actor, a famous celebrity, or a fictional character.
+                VIDEO METADATA: {metadata_summary}
 
-            ### FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean, # TRUE if Everyday Person/Creator, FALSE otherwise
-                "confidence_score": float,
-                "feature_quality_score": float, # 1.0 (Highly Authentic) to 0.0 (Clearly Commercial)
-                "metrics": {{
-                    "is_everyday_person": boolean,
-                    "is_commercial_actor": boolean,
-                    "is_celebrity": boolean,
-                    "is_fictional_mascot": boolean
-                }},
-                "overall_assessment": {{
-                    "authenticity_rating": float, # 0.0 - 1.0 (How 'real' do they feel?)
-                    "sum": "Max 8 words identifying the person's vibe"
-                }}
-            }}
-        """,
+                ### 1. DEFINITION (for reference):
+                    An 'Everyday Person' is an organic creator or real user who feels 
+                    unpolished and relatable. This feature is FALSE if the person is a 
+                    professional actor, a famous celebrity, or a fictional character.
+
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video AND `is_everyday_person` is True, based on:
+                       - how clearly you can identify the character type (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration of everyday person on screen) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Base score on Authenticity Rating (0.0 to 1.0). 1.0 = 
+                          Indistinguishable from an organic user; 0.0 = Obvious professional actor.
+                        - Score from 0.0 to 1.0 reflecting effectiveness in looking authentic.
+                    5. Rationale & Evidence: Cite specific timestamps and reasons.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "is_everyday_person": boolean (True if character feels like an everyday person),
+                        "is_commercial_actor": boolean (True if character appears to be a professional actor),
+                        "is_celebrity": boolean (True if character is a known celebrity),
+                        "is_fictional_mascot": boolean (True if character is a fictional entity or mascot)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1240,56 +987,45 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
           evaluation_criteria="""
-            Evaluates if the product is positioned as a secondary element rather than the main focus of the ad, 
-            appearing in a natural and realistic context.
+                Evaluates if the product is positioned as a secondary element rather than the main focus of the ad, 
+                appearing in a natural and realistic context.
             """,
           prompt_template="""
-            Act as a Product Stylist and Video Analyst. 
-            Evaluate: Is the product used naturally as a secondary element in a realistic context?
-    
-            VIDEO METADATA:
-            {metadata_summary}
+                Act as a Product Stylist and Video Analyst. 
+                Evaluate: Is the product used naturally as a secondary element in a realistic context?
+        
+                VIDEO METADATA:
+                {metadata_summary}
 
-            SCORE ON THREE DIMENSIONS (0-100 each):
+                ### 1. SCORE DIMENSIONS (for reference):
+                    - PRACTICAL UTILITY (45% weight): Product used for its actual purpose naturally.
+                    - ENVIRONMENTAL REALISM (30% weight): Messy, real-world environment.
+                    - VISUAL WEIGHT (25% weight): Product occupies <20% of frame while in use.
 
-            1. PRACTICAL UTILITY (45% weight)
-               Focus: Is the product being used for its actual purpose naturally?
-               - 90-100: Product usage is active but effortless (part of the background action).
-               - 70-89: Usage is clear but slightly emphasized for the camera.
-               - 0-69: Product is just "held" or static; trophy-like.
-
-            2. ENVIRONMENTAL REALISM (30% weight)
-               Focus: Authenticity of the "Lived-in" space.
-               - 90-100: Messy, real-world, or non-studio environment.
-               - 70-89: Clean setting but clearly a home/office.
-               - 0-69: Sterile white background or over-lit studio.
-
-            3. VISUAL WEIGHT (25% weight)
-               Focus: Subject-to-Frame Ratio (SfR) balance.
-               - 90-100: Product occupies <20% of frame while in use.
-               - 70-89: Product occupies 20-35% of frame.
-               - 0-69: Product is dominant (>50% of frame).
-
-            FINAL CALCULATION:
-            Overall Score = (Utility × 0.45) + (Realism × 0.30) + (Weight × 0.25)
-
-            FORMAT RESPONSE AS JSON:
-            {{
-                "detected": boolean,
-                "confidence_score": float,
-                "evaluation": {{
-                    "usage_type": str,
-                    "environment_type": str,
-                    "utility_score": int,
-                    "realism_score": int,
-                    "visual_weight_score": int,
-                    "weighted_overall": float
-                }},
-                "metrics": {{
-                    "avg_sfr_percentage": float,
-                    "is_product_secondary": boolean
-                }}
-            }}""",
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you can identify the product being used as a secondary, contextual element. Otherwise set to False.
+                    2. Set `detected_confidence_score`: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Calculate feature_density_score: 
+                        - Formula: (Duration where product is a secondary element) / (Total video duration)
+                        - Returns a raw float value between 0.0 and 1.0.
+                    4. Calculate feature_quality_score: 
+                        - Score each of the three dimensions in Step 1 from 0 to 100.
+                        - Calculate the weighted total: `(Practical Utility * 0.45) + 
+                          (Environmental Realism * 0.30) + (Visual Weight * 0.25)`.
+                        - Divide the weighted total by 100 to get the final 
+                          `feature_quality_score` as a float between 0.0 and 1.0.
+                    5. Rationale & Evidence: Cite specific timestamps and contexts 
+                       supporting the scores.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "usage_type": string (e.g., Active use, Passive placement),
+                        "environment_type": string (e.g., Real-world, Studio-like),
+                        "utility_score": int (Score for practical utility from 0 to 100),
+                        "realism_score": int (Score for environmental realism from 0 to 100),
+                        "visual_weight_score": int (Score for visual weight from 0 to 100)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
@@ -1302,35 +1038,40 @@ def get_shorts_feature_configs() -> list[VideoFeature]:
           category=VideoFeatureCategory.SHORTS,
           sub_category=VideoFeatureSubCategory.NONE,
           video_segment=VideoSegment.FULL_VIDEO,
-          evaluation_criteria=(
-              "Verifies 9:16 portrait ratio and detects"
-              " letterboxing/pillarboxing."
-          ),
+          evaluation_criteria="""
+                Verifies 9:16 portrait ratio and detects letterboxing/pillarboxing.
+            """,
           prompt_template="""
-            Verify if the video is optimized for mobile (9:16). 
-    
-            VIDEO METADATA:
-            {metadata_summary}
-            
-            Metrics:
-            - feature_quality_score: 1.0 (True 9:16), 0.5 (Letterboxed/Square), 0.0 (Horizontal).
+                Verify if the video is optimized for mobile (9:16). 
+        
+                VIDEO METADATA:
+                {metadata_summary}
+                
+                ### 1. SCORE MAPPING (for reference):
+                    - feature_density_score: 1.0 (True 9:16), 0.5 (Letterboxed/Square), 
+                      0.0 (Horizontal).
 
-            JSON ONLY:
-            {{
-                "detected": bool,
-                "confidence_score": float,
-                "feature_quality_score": float, 
-                "metrics": {{
-                    "format": "9:16"|"1:1"|"16:9"|"mixed",
-                    "is_letterboxed": bool,
-                    "safe_zone_compliant": bool
-                }},
-                "overall_assessment": {{
-                    "mobile_native_score": float,
-                    "sum": "Max 10 words summary"
-                }}
-            }}
-        """,
+                ### 2. EVALUATION LOGIC:
+                    1. Detection Decision: Set `detected` to True if the feature is present in the video, based on:
+                       - how clearly you can determine the aspect ratio
+                       - how clearly you can determine the presence of letterboxing (regardless of duration). Otherwise set to False.
+                    2. Set detected_confidence_score: Score from 0.0 to 1.0 reflecting your confidence in your final detected decision.
+                    3. Set feature_density_score: Based on the format (1.0 for 9:16, 
+                       0.5 for square/letterboxed, 0.0 for horizontal).
+                    4. Calculate feature_quality_score: 
+                        - 1.0 if the video is True 9:16 AND compliant with the Mobile 
+                          Safe Zone (no key content cut off by UI).
+                        - 0.5 if True 9:16 but violates Safe Zone.
+                        - 0.0 if not optimized for vertical viewing.
+                    5. Rationale & Evidence: Cite the aspect ratio and presence of 
+                       letterboxing.
+            """
+                + BASE_RESPONSE_FORMAT.format(
+                    specifics="""
+                        "format": string (e.g., 9:16, Square, Horizontal),
+                        "is_letterboxed": boolean (True if letterboxing or pillarboxing is present),
+                        "safe_zone_compliant": boolean (True if key content avoids UI dead zones)""",
+          ),
           extra_instructions=[],
           evaluation_method=EvaluationMethod.LLMS,
           evaluation_function="",
