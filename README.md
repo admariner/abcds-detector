@@ -52,7 +52,7 @@ We're excited to announce major enhancements to the ABCDs Detector, significantl
     * **Video & Brand Info:** `execution_timestamp`, `brand_name`, `video_id`, `video_name`, `video_uri`.
     * **Feature Definition:** `feature_id`, `feature_name`, `feature_category`, `feature_sub_category`, `feature_video_segment`, `feature_evaluation_criteria`.
     * **Standard Evaluation:**
-        * `detected` (Boolean): Did the video pass the specific ABCD rule?
+        * `detected` (Boolean): Indicates whether the video adhered to the specific ABCD rule.
         * `confidence_score` (Float): How certain the LLM is about the detection (0.0 to 1.0).
         * `detected_evidence` (String): Description of the visual/audio cues and full timestamps supporting the decision.
         * `recommended_actions` (String): Actionable next steps for the editor to improve the video.
@@ -60,7 +60,7 @@ We're excited to announce major enhancements to the ABCDs Detector, significantl
     * **Advanced Shorts Metrics:** 
         * `first_appearance_timestamp` (String): When did this feature first appear in the video? (Format MM:SS).
         * `feature_density_score` (Float): Percentage of video duration where the feature is present.
-        * `feature_quality_score` (Float): How well was the feature executed? (0.0 to 1.0).
+        * `feature_quality_score` (Float): Quantifies the creative quality of the execution (0.0 to 1.0).
         * `feature_specifics` (JSON): The nested metrics and full temporal arrays for deep-dives (e.g., readability scores, vocal clarity).
     * **Context Info:** `brand_metadata` (JSON string of brand details), `config` (JSON string of execution config).
 
