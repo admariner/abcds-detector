@@ -96,6 +96,13 @@ class GeminiAPIService:
             config=generate_content_config,
         )
 
+        if response.parsed is None:
+          print("WARNING: response.parsed is None. Returning empty list.")
+          try:
+            print(f"DEBUG: Raw response text: {response.text}")
+          except Exception as e:
+            print(f"DEBUG: Could not print raw response text: {e}")
+          return []
         return response.parsed
       except ResourceExhausted as ex:
         print(f"QUOTA RETRY: {this_retry + 1}. ERROR {str(ex)} ...")
@@ -134,6 +141,7 @@ class GeminiAPIService:
           )
           # Raise exception for non-retriable errors
           raise
+    return []
 
   def execute_gemini_pro(
       self, config: Configuration, prompt: str, params: LLMParameters

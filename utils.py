@@ -48,7 +48,7 @@ def build_abcd_params_config(args: any) -> Configuration:
       use_llms=args.use_llms,
       run_long_form_abcd=args.run_long_form_abcd,
       run_shorts=args.run_shorts,
-      features_to_evaluate=args.features_to_evaluate.split(","),
+      features_to_evaluate=args.features_to_evaluate.split(",") if args.features_to_evaluate else [], # Handle None features_to_evaluate
       creative_provider_type=args.creative_provider_type,
       verbose=args.verbose,
   )
