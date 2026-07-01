@@ -24,7 +24,7 @@
 from configuration import Configuration
 from gcp_api_services.gemini_api_service import get_gemini_api_service, LLMParameters
 from prompts.prompt_generator import prompt_generator
-from models import VIDEO_RESPONSE_SCHEMA, VIDEO_METADATA_RESPONSE_SCHEMA
+from models import VIDEO_RESPONSE_SCHEMA, VIDEO_METADATA_RESPONSE_SCHEMA, SHORTS_RESPONSE_SCHEMA, VideoFeatureCategory
 
 
 class LLMDetector:
@@ -58,9 +58,17 @@ class LLMDetector:
         {"type": "video", "video_uri": evaluation_details.get("video_uri")}
     )
     # Set the required schema for the LLM response
-    config.llm_params.generation_config["response_schema"] = (
-        VIDEO_RESPONSE_SCHEMA
-    )
+    category = evaluation_details.get("category")
+    is_shorts = getattr(category, "value", category) == "SHORTS"
+
+    if is_shorts:
+      config.llm_params.generation_config["response_schema"] = (
+          SHORTS_RESPONSE_SCHEMA
+      )
+    else:
+      config.llm_params.generation_config["response_schema"] = (
+          VIDEO_RESPONSE_SCHEMA
+      )
     evaluated_features = get_gemini_api_service(
         config
     ).execute_gemini_with_genai(prompt_config, llm_params)

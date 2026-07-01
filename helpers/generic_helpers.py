@@ -255,6 +255,82 @@ def get_feature_by_id(features: list[str], feature_id: str) -> list[str]:
   return None
 
 
+def get_shorts_table_columns_schema() -> list[dict]:
+  """Gets the table columns schema for the Shorts assessments table in BQ."""
+  return [
+      {
+          "column": "execution_timestamp",
+          "data_type": bigquery.enums.SqlTypeNames.TIMESTAMP,
+      },
+      {"column": "brand_name", "data_type": bigquery.enums.SqlTypeNames.STRING},
+      {"column": "video_id", "data_type": bigquery.enums.SqlTypeNames.STRING},
+      {"column": "video_name", "data_type": bigquery.enums.SqlTypeNames.STRING},
+      {"column": "video_uri", "data_type": bigquery.enums.SqlTypeNames.STRING},
+      {"column": "feature_id", "data_type": bigquery.enums.SqlTypeNames.STRING},
+      {
+          "column": "feature_name",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "feature_category",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "feature_sub_category",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "feature_video_segment",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "feature_evaluation_criteria",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "detected",
+          "data_type": bigquery.enums.SqlTypeNames.BOOLEAN,
+      },
+      {
+          "column": "confidence_score",
+          "data_type": bigquery.enums.SqlTypeNames.FLOAT,
+      },
+      {
+          "column": "detected_evidence",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "recommended_actions",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "strengths_to_keep",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "first_appearance_timestamp",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "feature_density_score",
+          "data_type": bigquery.enums.SqlTypeNames.FLOAT,
+      },
+      {
+          "column": "feature_quality_score",
+          "data_type": bigquery.enums.SqlTypeNames.FLOAT,
+      },
+      {
+          "column": "feature_specifics",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {
+          "column": "brand_metadata",
+          "data_type": bigquery.enums.SqlTypeNames.STRING,
+      },
+      {"column": "config", "data_type": bigquery.enums.SqlTypeNames.STRING},
+  ]
+
+
 def get_table_columns_schema() -> list[str]:
   """Gets the table columns schema for the assessments table in BQ."""
   return [
@@ -327,6 +403,26 @@ def get_table_schema() -> list[bigquery.SchemaField]:
   return schema
 
 
+def get_shorts_table_columns() -> list[str]:
+  """Gets the table columns for the Shorts assessments table in BQ."""
+  columns = []
+  for column_schema in get_shorts_table_columns_schema():
+    columns.append(column_schema.get("column"))
+  return columns
+
+
+def get_shorts_table_schema() -> list[bigquery.SchemaField]:
+  """Gets the schema for the Shorts assessments table in BQ."""
+  schema = []
+  for column_schema in get_shorts_table_columns_schema():
+    schema.append(
+        bigquery.SchemaField(
+            column_schema.get("column"), column_schema.get("data_type")
+        )
+    )
+  return schema
+
+
 def update_annotations_evaluated_features(
     assessment_bq: list[dict], annotations_evaluation: list[dict]
 ) -> None:
@@ -387,65 +483,73 @@ def update_llms_evaluated_features(
     print("No llms_evaluation found. Skipping from storing it in BQ. \n")
 
 
-def store_in_bq(
-    config: Configuration,
-    video_assessment: models.VideoAssessment,
-):
-  """Store ABCD assessment results in BQ"""
-
-  print(
-      f"Storing ABCD assessment for video {video_assessment.video_uri} in"
-      " BigQuery... \n"
-  )
-  bq_api_service = bigquery_api_service.BigQueryAPIService(config.project_id)
-  assessment_bq = build_features_for_bq(config, video_assessment)
-
-  # Insert if there is any feature evaluation
+def _store_rows_in_bq(config, bq_api_service, assessment_bq, table_name, is_shorts):
+  """Helper to store rows in BQ using either Shorts or Long Form schema."""
   if len(assessment_bq) > 0:
-    columns = get_table_columns()
+    if is_shorts:
+      columns = get_shorts_table_columns()
+      schema = get_shorts_table_schema()
+    else:
+      columns = get_table_columns()
+      schema = get_table_schema()
+
     dataframe = pandas.DataFrame(
         assessment_bq,
-        # In the loaded table, the column order reflects the order of the
-        # columns in the DataFrame.
         columns=columns,
     )
-    # Create dataset if it does not exist
     bq_api_service.create_dataset(config.bq_dataset_name, config.project_zone)
-    schema = get_table_schema()
     table_created = bq_api_service.create_table(
-        config.bq_dataset_name, config.bq_table_name, schema
+        config.bq_dataset_name, table_name, schema
     )
-    # Wait for table creation
     if table_created:
-      print(f"Inserting {len(assessment_bq)} rows into BQ... \n")
+      print(f"Inserting {len(assessment_bq)} rows into {table_name}... \n")
       bq_api_service.load_table_from_dataframe(
           config.bq_dataset_name,
-          config.bq_table_name,
+          table_name,
           dataframe,
           schema,
           "WRITE_APPEND",
       )
     else:
       print(
-          "Error: ABCD assessments not loaded to table"
-          f" {config.bq_dataset_name}.{config.bq_table_name} because the table"
+          f"Error: ABCD assessments not loaded to table"
+          f" {config.bq_dataset_name}.{table_name} because the table"
           " could not be created. \n"
       )
   else:
-    print(
-        "There are no rows to insert into BQ for video"
-        f" {video_assessment.get('video_uri')}. \n"
-    )
+    print(f"There are no rows to insert into BQ for table {table_name}. \n")
+
+
+def store_in_bq(
+    config: Configuration,
+    video_assessment: models.VideoAssessment,
+):
+  """Store ABCD assessment results in BQ"""
+
+  bq_api_service = bigquery_api_service.BigQueryAPIService(config.project_id)
+
+  # Process Long Form Features
+  if video_assessment.long_form_abcd_evaluated_features:
+    print(f"Storing Long Form ABCD assessment for video {video_assessment.video_uri} in BigQuery... \n")
+    assessment_bq = build_features_for_bq(config, video_assessment, is_shorts=False)
+    _store_rows_in_bq(config, bq_api_service, assessment_bq, config.bq_table_name, is_shorts=False)
+
+  # Process Shorts Features
+  if video_assessment.shorts_evaluated_features:
+    print(f"Storing Shorts ABCD assessment for video {video_assessment.video_uri} in BigQuery... \n")
+    assessment_bq = build_features_for_bq(config, video_assessment, is_shorts=True)
+    _store_rows_in_bq(config, bq_api_service, assessment_bq, config.bq_table_name + "_shorts", is_shorts=True)
 
 
 def build_features_for_bq(
-    config: Configuration, video_assessment: models.VideoAssessment
+    config: Configuration, video_assessment: models.VideoAssessment, is_shorts: bool
 ) -> list[dict]:
   """Builds features schema with values and default values for table in BQ"""
   assessment_bq = []
-  evaluated_features = []
-  evaluated_features.extend(video_assessment.long_form_abcd_evaluated_features)
-  evaluated_features.extend(video_assessment.shorts_evaluated_features)
+  if is_shorts:
+    evaluated_features = video_assessment.shorts_evaluated_features
+  else:
+    evaluated_features = video_assessment.long_form_abcd_evaluated_features
   # Insert all feature configs first
   for eval_feature in evaluated_features:
     if config.creative_provider_type == models.CreativeProviderType:
@@ -465,36 +569,67 @@ def build_features_for_bq(
     else:
       sub_category = eval_feature.feature.sub_category
 
-    assessment_bq.append({
-        "execution_timestamp": datetime.datetime.now(),
-        "brand_name": video_assessment.brand_name,
-        "video_id": video_assessment.video_uri,
-        "video_name": video_name,
-        "video_uri": video_assessment.video_uri,
-        "feature_id": eval_feature.feature.id,
-        "feature_name": eval_feature.feature.name,
-        "feature_category": category,
-        "feature_sub_category": sub_category,
-        "feature_video_segment": eval_feature.feature.video_segment.value,
-        "feature_evaluation_criteria": eval_feature.feature.evaluation_criteria,
-        "detected": eval_feature.detected,
-        "confidence_score": str(
-            eval_feature.confidence_score
-        ),  # TODO (ae) convert to str for now to avoid pandas issue
-        "evidence": eval_feature.evidence,
-        "rationale": eval_feature.rationale,
-        "strengths": eval_feature.strengths,
-        "weaknesses": eval_feature.weaknesses,
-        "brand_metadata": str({
-            "brand_name": config.brand_name,
-            "brand_variations": ",".join(config.brand_variations),
-            "branded_products": ",".join(config.branded_products),
-            "branded_product_categories": ",".join(
-                config.branded_products_categories
-            ),
-        }),
-        "config": str(config.__dict__),
-    })
+    if is_shorts:
+      assessment_bq.append({
+          "execution_timestamp": datetime.datetime.now(),
+          "brand_name": video_assessment.brand_name,
+          "video_id": video_assessment.video_uri,
+          "video_name": video_name,
+          "video_uri": video_assessment.video_uri,
+          "feature_id": eval_feature.feature.id,
+          "feature_name": eval_feature.feature.name,
+          "feature_category": category,
+          "feature_sub_category": sub_category,
+          "feature_video_segment": eval_feature.feature.video_segment.value,
+          "feature_evaluation_criteria": eval_feature.feature.evaluation_criteria,
+          "detected": eval_feature.detected,
+          "confidence_score": eval_feature.confidence_score,
+          "detected_evidence": eval_feature.detected_evidence,
+          "recommended_actions": eval_feature.recommended_actions,
+          "strengths_to_keep": eval_feature.strengths_to_keep,
+          "first_appearance_timestamp": eval_feature.first_appearance_timestamp,
+          "feature_density_score": eval_feature.feature_density_score,
+          "feature_quality_score": eval_feature.feature_quality_score,
+          "feature_specifics": json.dumps(eval_feature.feature_specifics) if eval_feature.feature_specifics else "{}",
+          "brand_metadata": str({
+              "brand_name": config.brand_name,
+              "brand_variations": ",".join(config.brand_variations),
+              "branded_products": ",".join(config.branded_products),
+              "branded_product_categories": ",".join(config.branded_products_categories),
+          }),
+          "config": str(config.__dict__),
+      })
+    else:
+      assessment_bq.append({
+          "execution_timestamp": datetime.datetime.now(),
+          "brand_name": video_assessment.brand_name,
+          "video_id": video_assessment.video_uri,
+          "video_name": video_name,
+          "video_uri": video_assessment.video_uri,
+          "feature_id": eval_feature.feature.id,
+          "feature_name": eval_feature.feature.name,
+          "feature_category": category,
+          "feature_sub_category": sub_category,
+          "feature_video_segment": eval_feature.feature.video_segment.value,
+          "feature_evaluation_criteria": eval_feature.feature.evaluation_criteria,
+          "detected": eval_feature.detected,
+          "confidence_score": str(
+              eval_feature.confidence_score
+          ),  # TODO (ae) convert to str for now to avoid pandas issue
+          "evidence": eval_feature.evidence,
+          "rationale": eval_feature.rationale,
+          "strengths": eval_feature.strengths,
+          "weaknesses": eval_feature.weaknesses,
+          "brand_metadata": str({
+              "brand_name": config.brand_name,
+              "brand_variations": ",".join(config.brand_variations),
+              "branded_products": ",".join(config.branded_products),
+              "branded_product_categories": ",".join(
+                  config.branded_products_categories
+              ),
+          }),
+          "config": str(config.__dict__),
+      })
   return assessment_bq
 
 
